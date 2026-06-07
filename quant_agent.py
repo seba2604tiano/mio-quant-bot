@@ -5,7 +5,7 @@ import time
 from datetime import datetime
 
 # Configurazione iniziale della pagina
-st.set_page_config(page_title="Quant Agent Corazzata v38.5", layout="wide")
+st.set_page_config(page_title="Quant Agent Operazione v38.6", layout="wide")
 
 # --- RECUPERO CHIAVI FISSE DAI SECRETS ---
 chiave_fissa_id = st.secrets.get("ALPACA_API_KEY_ID", "")
@@ -42,20 +42,19 @@ st.sidebar.markdown("---")
 attiva_capitale = st.sidebar.checkbox("🚀 Attiva Trading Automatico", value=False)
 
 if attiva_capitale:
-    st.sidebar.warning("⚠️ CORAZZATA ARMATA: Il bot sparerà ordini in automatico!")
+    st.sidebar.warning("⚠️ CORAZZATA ARMATA: Operazioni automatiche abilitate.")
 
-# --- IL NUOVO EQUIPAGGIO DI SELEZIONE (25 MONETE ATTIVE SU ALPACA) ---
+# --- SNELLO E CATTIVO: SOLO SOLDATI REALI CERTIFICATI DA ALPACA ---
 EQUIPAGGIO = {
     "👑 I Re del Mercato": ["BTC/USD", "ETH/USD", "SOL/USD"],
-    "⚡ Layer 1 & Altcoin Calde": ["AVAX/USD", "LINK/USD", "DOT/USD", "MATIC/USD", "ADA/USD", "LTC/USD", "XRP/USD", "BCH/USD", "NEAR/USD", "ATOM/USD"],
-    "🌶️ Battaglione Meme & Speculazione": ["DOGE/USD", "SHIB/USD", "PEPE/USD", "WIF/USD", "BONK/USD"],
-    "🔮 DeFi & Web3": ["UNI/USD", "AAVE/USD", "MKR/USD", "GRT/USD", "STX/USD", "IMX/USD", "LDO/USD"]
+    "⚡ I Pilastri Altcoin": ["AVAX/USD", "LINK/USD", "DOT/USD", "LTC/USD", "XRP/USD", "BCH/USD"],
+    "🌶️ Battaglione Meme (Botti Notturni)": ["DOGE/USD", "SHIB/USD", "PEPE/USD", "WIF/USD", "BONK/USD"],
+    "🔮 DeFi & Web3 Leader": ["UNI/USD", "AAVE/USD", "GRT/USD", "LDO/USD"]
 }
 
-# Appiattiamo la lista per i cicli di scansione interni
 tutti_i_soldati = [coin for cat in EQUIPAGGIO.values() for coin in cat]
 
-# Inizializzazione sessioni
+# Inizializzazione sessioni persistenti
 if "scatola_nera" not in st.session_state: st.session_state.scatola_nera = {}
 if "storico_profitti" not in st.session_state: st.session_state.storico_profitti = []
 if "errori_consecutivi" not in st.session_state: st.session_state.errori_consecutivi = 0
@@ -101,6 +100,20 @@ def invia_ordine_alpaca(simbolo, lato, qty_dollari, key, secret):
         return res.status_code == 200 or res.status_code == 201
     except: return False
 
+# --- NUOVA FUNZIONE: PANIC BUTTON DI EVACUAZIONE TOTALE ---
+def panic_button_vendi_tutto(posizioni_reali, key, secret):
+    st.toast("🚨 PANIC BUTTON ATTIVATO! Evacuazione in corso...", icon="⚠️")
+    for simbolo_clean, qty in posizioni_reali.items():
+        url_ordine = f"{BASE_URL}/v2/orders"
+        headers = {"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret, "Content-Type": "application/json"}
+        payload = {"symbol": simbolo_clean, "qty": str(qty), "side": "sell", "type": "market", "time_in_force": "gtc"}
+        try: requests.post(url_ordine, json=payload, headers=headers)
+        except: pass
+    st.session_state.scatola_nera = {}
+    st.toast("🔥 Portafoglio Crypto completamente liquidato con successo!", icon="💰")
+    time.sleep(1)
+    st.rerun()
+
 def ottieni_e_trada_crypto(simbolo, posizioni_reali, key, secret):
     if not key or not secret: return {"Prezzo ($)": "Mancano chiavi", "RSI": "--", "Stato": "Attesa"}
     headers = {"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret}
@@ -119,7 +132,7 @@ def ottieni_e_trada_crypto(simbolo, posizioni_reali, key, secret):
                 ultimo_prezzo = prezzi_chiusura[-1]
                 rsi_attuale = calcola_rsi(prezzi_chiusura)
                 ha_posizione_reale = simbolo_clean in posizioni_reali or simbolo in posizioni_reali
-                stato = "🛰️ Radar"
+                stato = "🛰️ In Caccia"
                 
                 if not ha_posizione_reale and simbolo in st.session_state.scatola_nera:
                     del st.session_state.scatola_nera[simbolo]
@@ -129,7 +142,7 @@ def ottieni_e_trada_crypto(simbolo, posizioni_reali, key, secret):
                     if condizione and not ha_posizione_reale:
                         if invia_ordine_alpaca(simbolo, "buy", size_dollari, key, secret):
                             st.session_state.scatola_nera[simbolo] = {"prezzo_acquisto": ultimo_prezzo, "prezzo_massimo": ultimo_prezzo}
-                            st.toast(f"🛒 Inserito Soldato: {simbolo}", icon="🟢")
+                            st.toast(f"🛒 Entrato su {simbolo}", icon="🟢")
                     if ha_posizione_reale:
                         if simbolo not in st.session_state.scatola_nera:
                             st.session_state.scatola_nera[simbolo] = {"prezzo_acquisto": ultimo_prezzo, "prezzo_massimo": ultimo_prezzo}
@@ -148,15 +161,22 @@ def ottieni_e_trada_crypto(simbolo, posizioni_reali, key, secret):
                                     "Perf %": f"+{round(guadagno_pct, 2)}%", "Gain ($)": round((size_dollari * (guadagno_pct / 100)), 2)
                                 })
                                 del st.session_state.scatola_nera[simbolo]
-                                stato = "💥 Trailing!"
-                                st.toast(f"💰 Cassa incassata su {simbolo}!", icon="🔥")
-                elif ha_posizione_reale: stato = "📦 In Hold"
+                                stato = "💥 Chiuso!"
+                                st.toast(f"💰 Preso profitto su {simbolo}!", icon="🔥")
+                elif ha_posizione_reale: stato = "📦 In Posizione"
                 return {"Prezzo ($)": ultimo_prezzo, "RSI": rsi_attuale, "Stato": stato}
-        return {"Prezzo ($)": "No Feed", "RSI": "--", "Stato": "Ricerca"}
+        return {"Prezzo ($)": "Errore", "RSI": "--", "Stato": "Ricerca"}
     except: return {"Prezzo ($)": "Errore", "RSI": "--", "Stato": "Rete"}
 
-# --- GRAFICA TERMINALE ---
-st.markdown("## 🛰️ Quant Agent Corazzata Terminal v38.5")
+# --- GRAFICA TERMINALE OPERATIVO ---
+st.markdown("## 🛰️ Quant Agent Corazzata Terminal v38.6 — FULL POWER")
+
+# Inserimento visivo del pulsante rosso d'emergenza nella sidebar
+st.sidebar.markdown("---")
+st.sidebar.subheader("🚨 Protocollo Difesa")
+if st.sidebar.button("💥 PANIC BUTTON: VENDI TUTTO"):
+    pos_attuali_pulsante = ottieni_posizioni_reali(alpaca_key, alpaca_secret)
+    panic_button_vendi_tutto(pos_attuali_pulsante, alpaca_key, alpaca_secret)
 
 if st.session_state.errori_consecutivi >= 3:
     st.session_state.errori_consecutivi = 0
@@ -169,33 +189,25 @@ totale_guadagnato = sum([t["Gain ($)"] for t in st.session_state.storico_profitt
 c1, c2, c3 = st.columns(3)
 with c1: st.metric("💰 Cash Disponibile", f"$ {info_conto['cash']}")
 with c2: st.metric("🛡️ Capitale Corazzata", f"$ {info_conto['portfolio_value']}")
-with c3: st.metric("💵 CASSA PROFITTI SESSIONE", f"$ {round(totale_guadagnato, 2)}", delta="Stato Battaglia")
+with c3: st.metric("💵 CASSA PROFITTI SESSIONE", f"$ {round(totale_guadagnato, 2)}", delta="In Diretta")
 
-# --- SCANSIONE GLOBALE DI TUTTI I SOLDATI ---
 @st.cache_data(ttl=8)
 def scansiona_tutto(pos_chiavi_str, key, secret):
     mappa = {}
-    for s in tutti_i_soldati:
-        mappa[s] = ottieni_e_trada_crypto(s, pos_reali, key, secret)
+    for s in tutti_i_soldati: mappa[s] = ottieni_e_trada_crypto(s, pos_reali, key, secret)
     return mappa
 
 dati_globali = scansiona_tutto(str(pos_reali), alpaca_key, alpaca_secret)
 
-# --- CREAZIONE GRIGLIE DIVISE PER CATEGORIA ---
+# Mostra le griglie pulite senza asset inutili
 for categoria, monete in EQUIPAGGIO.items():
     st.markdown(f"### {categoria}")
     righe_cat = []
     for coin in monete:
         dati_c = dati_globali.get(coin, {"Prezzo ($)": "--", "RSI": "--", "Stato": "--"})
-        righe_cat.append({
-            "Asset": coin,
-            "Prezzo Attuale": dati_c["Prezzo ($)"],
-            "RSI (2 Min)": dati_c["RSI"],
-            "Stato Operativo / Profitto": dati_c["Stato"]
-        })
+        righe_cat.append({"Asset": coin, "Prezzo Attuale": dati_c["Prezzo ($)"], "RSI (2 Min)": dati_c["RSI"], "Stato Operativo / Profitto": dati_c["Stato"]})
     st.dataframe(pd.DataFrame(righe_cat), use_container_width=True, hide_index=True)
 
-# STORICO PROFITTI E TRACKING PICCHI
 if st.session_state.storico_profitti:
     st.markdown("---")
     st.subheader("💰 Registro dei Bottini di Guerra (Trade Chiusi)")
@@ -206,6 +218,6 @@ if st.session_state.scatola_nera:
     st.subheader("📊 Inseguimento Scatola Nera Attiva")
     st.dataframe(pd.DataFrame(st.session_state.scatola_nera).T, use_container_width=True)
 
-st.caption(f"Radar Corazzata sincronizzato alle ore: {datetime.now().strftime('%H:%M:%S')}")
+st.caption(f"Radar pronto all'opera. Orario di bordo: {datetime.now().strftime('%H:%M:%S')}")
 time.sleep(10)
 st.rerun()
