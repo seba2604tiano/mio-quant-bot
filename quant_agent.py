@@ -26,7 +26,6 @@ if attiva_capitale:
     st.sidebar.warning("⚠️ ATTENZIONE: Il bot è pronto a operare con capitale reale!")
 
 # --- FORMATO SIMBOLI AGGIORNATO PER ALPACA V1BETA3 ---
-# Se il server restituisce errore, usiamo i simboli puri richiesti dal feed USA
 crypto_maior = ["BTC/USD", "ETH/USD", "SOL/USD"]
 universo_hunter = ["DOGE/USD", "SHIB/USD", "PEPE/USD", "WIF/USD", "BONK/USD"]
 
@@ -64,7 +63,7 @@ def ottieni_dati_crypto(simbolo, key, secret):
     try:
         risposta = requests.get(DATA_URL, headers=headers, params=params)
         
-        # Se fallisce con la barra, il sistema fa un secondo tentativo automatico senza barra (formato misto)
+        # Se fallisce con la barra, fa un secondo tentativo automatico senza barra
         if risposta.status_code == 400 and "/" in simbolo:
             simbolo_alternativo = simbolo.replace("/", "")
             params["symbols"] = simbolo_alternativo
@@ -76,7 +75,7 @@ def ottieni_dati_crypto(simbolo, key, secret):
             barre = dati.get("bars", {}).get(simbolo, [])
             if barre:
                 prezzi_chiusura = [b["c"] for b in barre]
-                ultimo_prezzo = prezzi_chicursori = prezzi_chiusura[-1]
+                ultimo_prezzo = prezzi_chiusura[-1]
                 rsi_attuale = calcola_rsi(prezzi_chiusura)
                 
                 stato = "🔄 In Attesa"
