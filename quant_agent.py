@@ -148,15 +148,18 @@ if st.sidebar.button("🗑️ Svuota Registro Scatola Nera"):
 # ==========================================
 universo_core = ["BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "XRP-USD", "ADA-USD"]
 universo_hunter = [
-    "DOGE-USD", "SHIB-USD", "PEPE-USD", "WIF-USD", "BONK-USD", "FLOKI-USD", "POPCAT-USD", "BOME-USD", "TURBO-USD",
-    "AVAX-USD", "LINK-USD", "NEAR-USD", "FET-USD", "SUI-USD", "APT-USD", "RENDER-USD",
-    "GALA-USD", "FTM-USD", "Jasmy-USD", "ICP-USD", "LUNC-USD", "TAO-USD", "RUNE-USD", 
-    "GRT-USD", "FIL-USD", "OM-USD", "W-USD", "CHZ-USD", "1INCH-USD", "STX-USD", "ATOM-USD",
-    "HOME-USD", "WLD-USD", "ARRR-USD", "STG-USD", "HYPE-USD", "BIO-USD", "XLM-USD", 
-    "FARTCOIN-USD", "BCH-USD", "ZIG-USD", "DEXE-USD", "BRETT-USD", "PYTH-USD", "PENDLE-USD", 
-    "MON-USD", "ORDI-USD", "ARB-USD", "INJ-USD", "ZK-USD", "HNT-USD", "ACH-USD", 
-    "STRK-USD", "SPX-USD", "ENA-USD"
+    "DOGE-USD", "SHIB-USD", "PEPE-USD", "WIF-USD", "BONK-USD", 
+    "FLOKI-USD", "POPCAT-USD", "BOME-USD", "TURBO-USD", "AVAX-USD",
+    # "LINK-USD", "NEAR-USD", "FET-USD", "SUI-USD", "APT-USD", "RENDER-USD",
+    # "GALA-USD", "FTM-USD", "Jasmy-USD", "ICP-USD", "LUNC-USD", "TAO-USD", "RUNE-USD", 
+    # "GRT-USD", "FIL-USD", "OM-USD", "W-USD", "CHZ-USD", "1INCH-USD", "STX-USD", "ATOM-USD",
+    # "HOME-USD", "WLD-USD", "ARRR-USD", "STG-USD", "HYPE-USD", "BIO-USD", "XLM-USD", 
+    # "FARTCOIN-USD", "BCH-USD", "ZIG-USD", "DEXE-USD", "BRETT-USD", "PYTH-USD", "PENDLE-USD", 
+    # "MON-USD", "ORDI-USD", "ARB-USD", "INJ-USD", "ZK-USD", "HNT-USD", "ACH-USD", 
+    # "STRK-USD", "SPX-USD", "ENA-USD"
 ]
+
+
 
 # ==========================================
 # 5. CORPO PRINCIPALE - INTERFACCIA PLANCIA
