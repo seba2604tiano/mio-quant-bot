@@ -9,10 +9,17 @@ st.set_page_config(page_title="Mio Quant Bot", layout="wide")
 
 st.title("🤖 Il Mio Quant Bot - Dashboard")
 
+# --- RECUPERO CHIAVI FISSE DAI SECRETS ---
+# Se hai configurato i Secrets su Streamlit, il bot le prende da solo.
+# Altrimenti usa un testo vuoto di riserva.
+chiave_fissa_id = st.secrets.get("ALPACA_API_KEY_ID", "")
+chiave_fissa_secret = st.secrets.get("ALPACA_API_SECRET_KEY", "")
+
 # Barra laterale per le configurazioni e le chiavi
 st.sidebar.header("🔑 Configurazione API Alpaca")
-alpaca_key = st.sidebar.text_input("Alpaca API Key ID", type="password")
-alpaca_secret = st.sidebar.text_input("Alpaca API Secret Key", type="password")
+# Ora i campi hanno come "value" le chiavi fisse recuperate dal server
+alpaca_key = st.sidebar.text_input("Alpaca API Key ID", value=chiave_fissa_id, type="password")
+alpaca_secret = st.sidebar.text_input("Alpaca API Secret Key", value=chiave_fissa_secret, type="password")
 trading_mode = st.sidebar.radio("Modalità Trading", ["Paper (Simulazione)", "Live (Reale)"])
 
 # Configurazione endpoint ufficiale Alpaca per i dati storici/real-time delle Crypto
