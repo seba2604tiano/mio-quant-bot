@@ -15,13 +15,8 @@ alpaca_key = st.sidebar.text_input("Alpaca API Key ID", type="password")
 alpaca_secret = st.sidebar.text_input("Alpaca API Secret Key", type="password")
 trading_mode = st.sidebar.radio("Modalità Trading", ["Paper (Simulazione)", "Live (Reale)"])
 
-# Selezione dell'endpoint in base alla modalità
-if trading_mode == "Live (Reale)":
-    BASE_URL = "https://api.alpaca.markets"
-    DATA_URL = "https://data.alpaca.markets/v1beta3/crypto/us/bars"
-else:
-    BASE_URL = "https://paper-api.alpaca.markets"
-    DATA_URL = "https://data.alpaca.markets/v1beta3/crypto/us/bars"
+# Configurazione endpoint corretti per v1beta3 crypto
+DATA_URL = "https://data.alpaca.markets/v1beta3/crypto/us/bars"
 
 # Pulsante per attivazione capitale
 st.sidebar.markdown("---")
@@ -30,19 +25,22 @@ attiva_capitale = st.sidebar.checkbox("🚀 Attiva Capitale Reale", value=False)
 if attiva_capitale:
     st.sidebar.warning("⚠️ ATTENZIONE: Il bot è pronto a operare con capitale reale!")
 
-# Lista delle crypto da monitorare (versione snella per evitare blocchi)
-crypto_maior = ["BTC/USD", "ETH/USD", "SOL/USD"]
-universo_hunter = ["DOGE/USD", "SHIB/USD", "PEPE/USD", "WIF/USD", "BONK/USD"]
+# Lista delle crypto nel nuovo formato richiesto da Alpaca (senza barra)
+crypto_maior = ["BTCUSD", "ETHUSD", "SOLUSD"]
+universo_hunter = ["DOGEUSD", "SHIBUSD", "PEPEUSD", "WIFUSD", "BONKUSD"]
 
-# Funzione per calcolare l'RSI semplice
+# Funzione per calcolare l'RSI matematicamente corretta
 def calcola_rsi(prezzi, periodi=14):
     if len(prezzi) < periodi + 1:
         return 50.0
     variazioni = pd.Series(prezzi).diff()
     guadagni = variazioni.clip(lower=0)
     perdite = -variazioni.clip(upper=0)
-    media_guadagni = guadagni.ewm(compan=periodi, adjust=False).mean()
-    media_perdite = perdite.ewm(compan=periodi, adjust=False).mean()
+    
+    # Calcolo della media mobile esponenziale corretta
+    media_guadagni = guadagni.ewm(span=periodi, adjust=False).mean()
+    media_perdite = perdite.ewm(span=periodi, adjust=False).mean()
+    
     rs = media_guadagni / media_perdite.replace(0, 0.00001)
     rsi = 100 - (100 / (1 + rs))
     return round(rsi.iloc[-1], 2)
@@ -50,18 +48,19 @@ def calcola_rsi(prezzi, periodi=14):
 # Funzione per scaricare i dati reali da Alpaca
 def ottieni_dati_crypto(simbolo, key, secret):
     if not key or not secret:
-        return {"Prezzo ($)": "Mancano API Key", "RSI (2m)": "--", "Stato": "Chiavi vuote"}
+        return {"Prezzo ($)": "Inserisci le chiavi", "RSI (2m)": "--", "Stato": "Chiavi mancanti nella barra laterale"}
     
+    # Intestazioni di sicurezza standard per Alpaca
     headers = {
-        "EX-APCA-API-KEY-ID": key,
-        "EX-APCA-API-SECRET-KEY": secret
+        "APCA-API-KEY-ID": key,
+        "APCA-API-SECRET-KEY": secret
     }
     
-    # Richiesta barre a 2 minuti
+    # Parametri richiesti dall'API di Alpaca per le crypto
     params = {
         "symbols": simbolo,
         "timeframe": "2Min",
-        "limit": 20
+        "limit": 30
     }
     
     try:
@@ -79,11 +78,13 @@ def ottieni_dati_crypto(simbolo, key, secret):
                 elif rsi_attuale > 70: stato = "🔴 IPERCOMPRATO (VENDI)"
                 
                 return {"Prezzo ($)": ultimo_prezzo, "RSI (2m)": rsi_attuale, "Stato": stato}
+            else:
+                return {"Prezzo ($)": "Nessun dato", "RSI (2m)": "--", "Stato": "Alpaca non ha barre recenti per questo token"}
         elif risposta.status_code == 401:
-            return {"Prezzo ($)": "Errore", "RSI (2m)": "--", "Stato": "Chiavi Errate/Invalide"}
-        return {"Prezzo ($)": "Errore", "RSI (2m)": "--", "Stato": f"Errore server {risposta.status_code}"}
-    except:
-        return {"Prezzo ($)": "Timeout", "RSI (2m)": "--", "Stato": "Connessione persa"}
+            return {"Prezzo ($)": "Errore 401", "RSI (2m)": "--", "Stato": "Chiavi Rifiutate da Alpaca (Errate o Scadute)"}
+        return {"Prezzo ($)": "Errore", "RSI (2m)": "--", "Stato": f"Errore Alpaca: {risposta.status_code}"}
+    except Exception as e:
+        return {"Prezzo ($)": "Timeout", "RSI (2m)": "--", "Stato": "Impossibile raggiungere i server di Alpaca"}
 
 # --- SEZIONE 1: CRYPTO PRINCIPALI ---
 st.subheader("📈 Crypto Principali (Real-time)")
