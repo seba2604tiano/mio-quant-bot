@@ -6,7 +6,7 @@ import json
 from datetime import datetime
 
 # Configurazione iniziale della pagina
-st.set_page_config(page_title="Quant Agent Elite v38.1", layout="wide")
+st.set_page_config(page_title="Quant Agent Elite v38.2", layout="wide")
 
 # --- RECUPERO CHIAVI FISSE DAI SECRETS ---
 chiave_fissa_id = st.secrets.get("ALPACA_API_KEY_ID", "")
@@ -18,7 +18,7 @@ alpaca_key = st.sidebar.text_input("Alpaca API Key ID", value=chiave_fissa_id, t
 alpaca_secret = st.sidebar.text_input("Alpaca API Secret Key", value=chiave_fissa_secret, type="password")
 trading_mode = st.sidebar.radio("Modalità Trading", ["Paper (Simulazione)", "Live (Reale)"])
 
-# Impostazione degli endpoint in base alla modalità scelta
+# Impostazione degli endpoint
 if trading_mode == "Live (Reale)":
     BASE_URL = "https://api.alpaca.markets"
 else:
@@ -26,26 +26,34 @@ else:
 
 DATA_URL = "https://data.alpaca.markets/v1beta3/crypto/us/bars"
 
-# Parametri del Trailing Stop configurabili direttamente dalla barra laterale
+# --- AGGIUNTO: SLIDER PER IL PEPE (CAPITALE DINAMICO) ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("💰 Gestione Munizioni")
+size_dollari = st.sidebar.slider("Capitale per Singolo Trade ($)", min_value=5, max_value=250, value=20, step=5)
+
+# Parametri del Trailing Stop configurabili
 st.sidebar.markdown("---")
 st.sidebar.subheader("⚙️ Parametri Trailing Stop")
 trailing_activation = st.sidebar.slider("Attivazione Trailing Stop (%)", min_value=1.0, max_value=20.0, value=5.0, step=0.5)
 trailing_distance = st.sidebar.slider("Distanza dallo Stop (% dal massimo)", min_value=0.5, max_value=5.0, value=2.0, step=0.1)
 
-# Pulsante critico per attivazione speculazione reale
+# Pulsante di attivazione trading automatico
 st.sidebar.markdown("---")
 attiva_capitale = st.sidebar.checkbox("🚀 Attiva Trading Automatico", value=False)
 
 if attiva_capitale:
     st.sidebar.warning("⚠️ BOT ATTIVO: Il sistema eseguirà ordini in base ai segnali!")
 
-# Universi di Asset
+# Universi di Asset — ORA CON MOLTO PIÙ PEPE! 😉
 crypto_maior = ["BTC/USD", "ETH/USD", "SOL/USD"]
-universo_hunter = ["DOGE/USD", "SHIB/USD", "PEPE/USD", "WIF/USD", "BONK/USD"]
+universo_hunter = [
+    "DOGE/USD", "SHIB/USD", "PEPE/USD", "WIF/USD", "BONK/USD", 
+    "FLOKI/USD", "MEME/USD", "BOME/USD", "POPCAT/USD", "BRETT/USD"
+]
 
-# Inizializzazione della Scatola Nera per tracciare i picchi dei prezzi
+# Inizializzazione della Scatola Nera
 if "scatola_nera" not in st.session_state:
-    st.session_state.scatola_nera = {} # Struttura: { SIMBOLO: {"prezzo_acquisto": X, "prezzo_massimo": Y} }
+    st.session_state.scatola_nera = {}
 
 # Funzione per calcolare l'RSI
 def calcola_rsi(prezzi, periodi=14):
@@ -68,7 +76,6 @@ def ottieni_posizioni_reali(key, secret):
         res = requests.get(url, headers=headers)
         if res.status_code == 200:
             posizioni = res.json()
-            # Mappa i simboli reali (es. BTCUSD) per riconoscerli nel bot
             return {p["symbol"]: float(p["qty"]) for p in posizioni}
     except:
         pass
@@ -90,7 +97,7 @@ def ottieni_bilancio_conto(key, secret):
         pass
     return {"cash": "0.0", "portfolio_value": "0.0"}
 
-# Funzione per inviare ordini di Compra/Vendi ad Alpaca
+# Funzione per inviare ordini di Compra/Vendi
 def invia_ordine_alpaca(simbolo, lato, qty_dollari, key, secret):
     url_ordine = f"{BASE_URL}/v2/orders"
     headers = {
@@ -112,7 +119,7 @@ def invia_ordine_alpaca(simbolo, lato, qty_dollari, key, secret):
     except:
         return False
 
-# Funzione per scaricare i dati reali e gestire il Trailing Stop
+# Funzione principale di trading e ricezione dati
 def ottieni_e_trada_crypto(simbolo, posizioni_reali, key, secret):
     if not key or not secret:
         return {"Prezzo ($)": "Mancano chiavi", "RSI (2m)": "--", "Stato": "Attesa"}
@@ -135,28 +142,25 @@ def ottieni_e_trada_crypto(simbolo, posizioni_reali, key, secret):
                 ultimo_prezzo = prezzi_chiusura[-1]
                 rsi_attuale = calcola_rsi(prezzi_chiusura)
                 
-                # Verifica se possediamo l'asset sul conto Alpaca vero
                 ha_posizione_reale = simbolo_clean in posizioni_reali or simbolo in posizioni_reali
                 stato = "🔄 In Monitoraggio"
                 
-                # Se Alpaca dice che non abbiamo più la posizione, la cancelliamo dalla scatola nera del trailing
                 if not ha_posizione_reale and simbolo in st.session_state.scatola_nera:
                     del st.session_state.scatola_nera[simbolo]
 
-                # --- LOGICA OPERATIVA ---
+                # --- LOGICA OPERATIVA CON PEPE ---
                 if attiva_capitale:
-                    # 1. COMPRA se l'RSI va sotto 30 e non abbiamo posizioni aperte
+                    # 1. ACQUISTO (Usa la quantità di dollari scelta nello slider)
                     if rsi_attuale < 30 and not ha_posizione_reale:
-                        if invia_ordine_alpaca(simbolo, "buy", 10, key, secret):
+                        if invia_ordine_alpaca(simbolo, "buy", size_dollari, key, secret):
                             st.session_state.scatola_nera[simbolo] = {
                                 "prezzo_acquisto": ultimo_prezzo,
                                 "prezzo_massimo": ultimo_prezzo
                             }
-                            st.toast(f"🟢 Acquistato {simbolo} a ${ultimo_prezzo}!", icon="🛒")
+                            st.toast(f"🟢 Acquistato {simbolo} per ${size_dollari}!", icon="🛒")
                     
-                    # 2. INSEGUIMENTO TRAILING se abbiamo la moneta in portafoglio
+                    # 2. TRAILING STOP
                     if ha_posizione_reale:
-                        # Se il bot riparte e trova una posizione reale ma non ha lo storico del massimo, lo reinizializza
                         if simbolo not in st.session_state.scatola_nera:
                             st.session_state.scatola_nera[simbolo] = {
                                 "prezzo_acquisto": ultimo_prezzo,
@@ -165,7 +169,6 @@ def ottieni_e_trada_crypto(simbolo, posizioni_reali, key, secret):
                         
                         dati_pos = st.session_state.scatola_nera[simbolo]
                         
-                        # Aggiorna il picco massimo se il prezzo sale
                         if ultimo_prezzo > dati_pos["prezzo_massimo"]:
                             st.session_state.scatola_nera[simbolo]["prezzo_massimo"] = ultimo_prezzo
                             dati_pos["prezzo_massimo"] = ultimo_prezzo
@@ -175,16 +178,15 @@ def ottieni_e_trada_crypto(simbolo, posizioni_reali, key, secret):
                         
                         stato = f"📦 In Posizione ({round(guadagno_pct, 2)}%)"
                         
-                        # Condizione di scatto: profitto minimo raggiunto e ritracciamento rilevato dal picco massimo
                         if guadagno_pct >= trailing_activation and discesa_dal_massimo >= trailing_distance:
-                            if invia_ordine_alpaca(simbolo, "sell", 10, key, secret):
+                            if invia_ordine_alpaca(simbolo, "sell", size_dollari, key, secret):
                                 if simbolo in st.session_state.scatola_nera:
                                     del st.session_state.scatola_nera[simbolo]
                                 stato = "🔴 Trailing Scattato! Venduto."
-                                st.toast(f"🔥 Venduto {simbolo}! Profitto messo in cassaforte.", icon="💰")
+                                st.toast(f"🔥 Venduto {simbolo}! Profitto incassato.", icon="💰")
                 
                 elif ha_posizione_reale:
-                    stato = "📦 Asset in Portafoglio (Trading automatico spento)"
+                    stato = "📦 Asset in Portafoglio (Auto-Trade Off)"
 
                 return {"Prezzo ($)": ultimo_prezzo, "RSI (2m)": rsi_attuale, "Stato": stato}
             return {"Prezzo ($)": "No Data", "RSI (2m)": "--", "Stato": "Nessuna barra"}
@@ -193,19 +195,17 @@ def ottieni_e_trada_crypto(simbolo, posizioni_reali, key, secret):
         return {"Prezzo ($)": "Errore", "RSI (2m)": "--", "Stato": "Connessione KO"}
 
 # --- SCHERMATA PRINCIPALE TERMINALE ---
-st.markdown("## 🛰️ Quant Agent Elite Terminal v38.1 — SCATOLA CORRAZZATA")
-st.success("🔒 **SCATOLA NERA ATTIVA:** Sincronizzazione in tempo reale con il portafoglio ufficiale Alpaca.")
+st.markdown("## 🛰️ Quant Agent Elite Terminal v38.2 — MULTI-HUNTER")
+st.success("🔒 **SINCRO ATTIVA:** Pronti a catturare la volatilità notturna sulle Meme Coin.")
 
-# Recupero dati conto correnti
 info_conto = ottieni_bilancio_conto(alpaca_key, alpaca_secret)
 pos_reali = ottieni_posizioni_reali(alpaca_key, alpaca_secret)
 
-# Widget di riepilogo finanziario
 c1, c2 = st.columns(2)
 with c1:
     st.metric("Liquidità Cash Disponibile", f"$ {info_conto['cash']}")
 with c2:
-    st.metric("Valore Totale Portafoglio (Asset + Cash)", f"$ {info_conto['portfolio_value']}")
+    st.metric("Valore Totale Portafoglio", f"$ {info_conto['portfolio_value']}")
 
 # --- SEZIONE 1: CRYPTO PRINCIPALI ---
 st.markdown("---")
@@ -218,7 +218,7 @@ for i, token in enumerate(crypto_maior):
     with colonne[i]:
         st.metric(label=token, value=f"$ {dati_token['Prezzo ($)']}", delta=f"RSI: {dati_token['RSI (2m)']}")
 
-# --- SEZIONE 2: MEME & HUNTER ---
+# --- SEZIONE 2: MEME & HUNTER MULTIPLA ---
 st.markdown("---")
 st.subheader("🎯 Scanner Hunter & Inseguimento Trailing Stop")
 
@@ -235,7 +235,7 @@ for token in universo_hunter:
 df_meme = pd.DataFrame(risultati_meme)
 st.dataframe(df_meme, use_container_width=True)
 
-# Visualizzazione della memoria interna del Trailing Stop
+# Memoria della Scatola Nera
 if st.session_state.scatola_nera:
     st.markdown("---")
     st.subheader("📊 Scatola Nera: Monitoraggio Picchi e Prezzi di Carico")
