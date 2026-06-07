@@ -5,7 +5,7 @@ import time
 from datetime import datetime
 
 # Configurazione iniziale della pagina
-st.set_page_config(page_title="Quant Agent Elite v38.3", layout="wide")
+st.set_page_config(page_title="Quant Agent Elite v38.4", layout="wide")
 
 # --- RECUPERO CHIAVI FISSE DAI SECRETS ---
 chiave_fissa_id = st.secrets.get("ALPACA_API_KEY_ID", "")
@@ -34,28 +34,29 @@ st.sidebar.subheader("⚙️ Parametri Trailing Stop")
 trailing_activation = st.sidebar.slider("Attivazione Trailing Stop (%)", min_value=1.0, max_value=20.0, value=5.0, step=0.5)
 trailing_distance = st.sidebar.slider("Distanza dallo Stop (% dal massimo)", min_value=0.5, max_value=5.0, value=2.0, step=0.1)
 
+# NUOVO TRIGGER DI STRATEGIA NOTTURNA
+st.sidebar.markdown("---")
+st.sidebar.subheader("🏹 Strategia d'Ingresso")
+tipo_strategia = st.sidebar.selectbox("Condizione d'Acquisto", ["Ipervenduto Classico (RSI < 35)", "Inseguimento FOMO (RSI > 65)"])
+
 st.sidebar.markdown("---")
 attiva_capitale = st.sidebar.checkbox("🚀 Attiva Trading Automatico", value=False)
 
 if attiva_capitale:
     st.sidebar.warning("⚠️ BOT ATTIVO: Operazioni automatiche abilitate.")
 
-# Universi di Asset
+# Universi di Asset Sfoltito (Solo quelle certificate funzionanti da Alpaca feed)
 crypto_maior = ["BTC/USD", "ETH/USD", "SOL/USD"]
-universo_hunter = [
-    "DOGE/USD", "SHIB/USD", "PEPE/USD", "WIF/USD", "BONK/USD", 
-    "FLOKI/USD", "MEME/USD", "BOME/USD", "POPCAT/USD", "BRETT/USD"
-]
+universo_hunter = ["DOGE/USD", "SHIB/USD", "PEPE/USD", "WIF/USD", "BONK/USD"]
 
-# --- INIZIALIZZAZIONE CASSA DI MEMORIA E CONTROLLI ANTI-BLOCCO ---
+# Inizializzazione sessioni
 if "scatola_nera" not in st.session_state:
     st.session_state.scatola_nera = {}
 if "storico_profitti" not in st.session_state:
-    st.session_state.storico_profitti = []  # Cassa di memoria dei trade chiusi
+    st.session_state.storico_profitti = []
 if "errori_consecutivi" not in st.session_state:
     st.session_state.errori_consecutivi = 0
 
-# Funzione per calcolare l'RSI
 def calcola_rsi(prezzi, periodi=14):
     if len(prezzi) < periodi + 1:
         return 50.0
@@ -68,14 +69,13 @@ def calcola_rsi(prezzi, periodi=14):
     rsi = 100 - (100 / (1 + rs))
     return round(rsi.iloc[-1], 2)
 
-# Funzioni di comunicazione Alpaca
 def ottieni_posizioni_reali(key, secret):
     url = f"{BASE_URL}/v2/positions"
     headers = {"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret}
     try:
         res = requests.get(url, headers=headers)
         if res.status_code == 200:
-            st.session_state.errori_consecutivi = 0  # Reset contatore errori se risponde
+            st.session_state.errori_consecutivi = 0
             return {p["symbol"]: float(p["qty"]) for p in res.json()}
     except:
         st.session_state.errori_consecutivi += 1
@@ -103,7 +103,6 @@ def invia_ordine_alpaca(simbolo, lato, qty_dollari, key, secret):
     except:
         return False
 
-# Motore di scansione e trading
 def ottieni_e_trada_crypto(simbolo, posizioni_reali, key, secret):
     if not key or not secret:
         return {"Prezzo ($)": "Mancano chiavi", "RSI (2m)": "--", "Stato": "Attesa"}
@@ -132,15 +131,18 @@ def ottieni_e_trada_crypto(simbolo, posizioni_reali, key, secret):
                 if not ha_posizione_reale and simbolo in st.session_state.scatola_nera:
                     del st.session_state.scatola_nera[simbolo]
 
-                # --- LOGICA CORE ---
+                # --- LOGICA INTELLIGENTE ---
                 if attiva_capitale:
-                    # ACQUISTO
-                    if rsi_attuale < 30 and not ha_posizione_reale:
+                    # Determina la condizione di acquisto in base al selettore laterale
+                    condizione_acquisto = (rsi_attuale < 35) if "Ipervenduto" in tipo_strategia else (rsi_attuale > 65)
+                    
+                    # COMPRA
+                    if condizione_acquisto and not ha_posizione_reale:
                         if invia_ordine_alpaca(simbolo, "buy", size_dollari, key, secret):
                             st.session_state.scatola_nera[simbolo] = {"prezzo_acquisto": ultimo_prezzo, "prezzo_massimo": ultimo_prezzo, "ora_acquisto": datetime.now().strftime('%H:%M:%S')}
-                            st.toast(f"🟢 Preso {simbolo} (${size_dollari})", icon="🛒")
+                            st.toast(f"🟢 In posizione su {simbolo} ({tipo_strategia})", icon="🛒")
                     
-                    # INSEGUIMENTO E TRAILING STOP
+                    # GESTIONE TRAILING
                     if ha_posizione_reale:
                         if simbolo not in st.session_state.scatola_nera:
                             st.session_state.scatola_nera[simbolo] = {"prezzo_acquisto": ultimo_prezzo, "prezzo_massimo": ultimo_prezzo, "ora_acquisto": datetime.now().strftime('%H:%M:%S')}
@@ -154,85 +156,75 @@ def ottieni_e_trada_crypto(simbolo, posizioni_reali, key, secret):
                         discesa_dal_massimo = ((dati_pos["prezzo_massimo"] - ultimo_prezzo) / dati_pos["prezzo_massimo"]) * 100
                         stato = f"📦 In Posizione ({round(guadagno_pct, 2)}%)"
                         
-                        # SCATTO TRAILING: REGISTRAZIONE NELLA CASSA PROFITTI
                         if guadagno_pct >= trailing_activation and discesa_dal_massimo >= trailing_distance:
                             if invia_ordine_alpaca(simbolo, "sell", size_dollari, key, secret):
                                 profitto_esatto_dollari = round((size_dollari * (guadagno_pct / 100)), 2)
-                                
-                                # Salvataggio storico permanente nella cassa di memoria
                                 st.session_state.storico_profitti.append({
                                     "Orario Chiusura": datetime.now().strftime('%H:%M:%S'),
                                     "Crypto": simbolo,
-                                    "Prezzo Ingresso": dati_pos["prezzo_acquisto"],
-                                    "Prezzo Uscita": ultimo_prezzo,
                                     "Performance %": f"+{round(guadagno_pct, 2)}%",
                                     "Profitto Netto ($)": profitto_esatto_dollari
                                 })
-                                
                                 if simbolo in st.session_state.scatola_nera:
                                     del st.session_state.scatola_nera[simbolo]
                                 stato = "🔴 Trailing Scattato!"
-                                st.toast(f"🔥 Venduto {simbolo}! Portato a casa il profitto.", icon="💰")
+                                st.toast(f"🔥 Profitto incassato su {simbolo}!", icon="💰")
                 
                 elif ha_posizione_reale:
                     stato = "📦 In Portafoglio (Auto-Trade Off)"
 
                 return {"Prezzo ($)": ultimo_prezzo, "RSI (2m)": rsi_attuale, "Stato": stato}
-        return {"Prezzo ($)": "No Data", "RSI (2m)": "--", "Stato": "Ricerca..."}
+        return {"Prezzo ($)": "No Data", "RSI (2m)": "--", "Stato": "Attesa..."}
     except:
-        return {"Prezzo ($)": "Errore", "RSI (2m)": "--", "Stato": "Connessione ricalibrata"}
+        return {"Prezzo ($)": "Errore", "RSI (2m)": "--", "Stato": "Errore Rete"}
 
-# --- SCHERMATA PRINCIPALE TERMINALE ---
-st.markdown("## 🛰️ Quant Agent Elite Terminal v38.3")
+# --- SCHERMATA PRINCIPALE ---
+st.markdown("## 🛰️ Quant Agent Elite Terminal v38.4")
 
-# MECCANISMO AUTO-REBOOT INTEGRATO (Se ci sono più di 3 errori di rete consecutivi, pulisce e riavvia)
 if st.session_state.errori_consecutivi >= 3:
     st.session_state.errori_consecutivi = 0
-    st.toast("🔄 Rilevato blocco di rete. Esecuzione Auto-Reboot protettivo...", icon="⚡")
+    st.toast("🔄 Reset protettivo della pagina...", icon="⚡")
     time.sleep(2)
     st.rerun()
 
 info_conto = ottieni_bilancio_conto(alpaca_key, alpaca_secret)
 pos_reali = ottieni_posizioni_reali(alpaca_key, alpaca_secret)
-
-# Calcolo totale della Cassa Profitti
 totale_guadagnato = sum([trade["Profitto Netto ($)"] for trade in st.session_state.storico_profitti])
 
-# Widget Finanziari
 c1, c2, c3 = st.columns(3)
-with c1:
-    st.metric("Liquidità Cash Disponibile", f"$ {info_conto['cash']}")
-with c2:
-    st.metric("Valore Totale Portafoglio", f"$ {info_conto['portfolio_value']}")
-with c3:
-    # Questa è la tua nuova cassa profitti visiva
-    st.metric("💵 CASSA PROFITTI SESSIONE", f"$ {round(totale_guadagnato, 2)}", delta="Performance Bot")
+with c1: st.metric("Liquidità Cash Disponibile", f"$ {info_conto['cash']}")
+with c2: st.metric("Valore Totale Portafoglio", f"$ {info_conto['portfolio_value']}")
+with c3: st.metric("💵 CASSA PROFITTI SESSIONE", f"$ {round(totale_guadagnato, 2)}", delta="Performance Bot", delta_color="normal")
 
-# --- TABELLA DELLE MEME ---
+# --- CRYPTO PRINCIPALI ---
 st.markdown("---")
-st.subheader("🎯 Scanner Hunter & Inseguimento Trailing Stop")
+st.subheader("📈 Crypto Principali")
+col1, col2, col3 = st.columns(3)
+colonne = [col1, col2, col3]
+for i, token in enumerate(crypto_maior):
+    dati_token = ottieni_e_trada_crypto(token, pos_reali, alpaca_key, alpaca_secret)
+    with colonne[i]: st.metric(label=token, value=f"$ {dati_token['Prezzo ($)']}", delta=f"RSI: {dati_token['RSI (2m)']}")
 
+# --- SCANNER MEME ---
+st.markdown("---")
+st.subheader("🎯 Radar Meme Coins Attive")
 risultati_meme = []
 for token in universo_hunter:
     dati_token = ottieni_e_trada_crypto(token, pos_reali, alpaca_key, alpaca_secret)
     risultati_meme.append({"Crypto": token, "Prezzo Attuale": dati_token["Prezzo ($)"], "RSI (2 min)": dati_token["RSI (2m)"], "Stato Operativo": dati_token["Stato"]})
+st.dataframe(pd.DataFrame(risultati_meme), use_container_width=True)
 
-df_meme = pd.DataFrame(risultati_meme)
-st.dataframe(df_meme, use_container_width=True)
-
-# --- VISUALIZZAZIONE CASSA STORICA PROFITTI ---
+# STORICO E SCATOLA NERA
 if st.session_state.storico_profitti:
     st.markdown("---")
-    st.subheader("💰 Cassa Storica dei Trade Vincenti (Sessione Notturna)")
+    st.subheader("💰 Cassa Storica (Sessione Notturna)")
     st.dataframe(pd.DataFrame(st.session_state.storico_profitti), use_container_width=True)
 
-# Memoria della Scatola Nera attiva
 if st.session_state.scatola_nera:
     st.markdown("---")
-    st.subheader("📊 Scatola Nera: Monitoraggio Picchi Attivi")
+    st.subheader("📊 Inseguimento Picchi Attivi")
     st.dataframe(pd.DataFrame(st.session_state.scatola_nera).T, use_container_width=True)
 
-# Auto-aggiornamento
-st.caption(f"Ultimo aggiornamento della dashboard: {datetime.now().strftime('%H:%M:%S')} | Errori consecutivi: {st.session_state.errori_consecutivi}/3")
+st.caption(f"Ultimo aggiornamento della dashboard: {datetime.now().strftime('%H:%M:%S')}")
 time.sleep(10)
 st.rerun()
