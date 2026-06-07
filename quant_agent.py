@@ -15,7 +15,7 @@ alpaca_key = st.sidebar.text_input("Alpaca API Key ID", type="password")
 alpaca_secret = st.sidebar.text_input("Alpaca API Secret Key", type="password")
 trading_mode = st.sidebar.radio("Modalità Trading", ["Paper (Simulazione)", "Live (Reale)"])
 
-# Configurazione endpoint corretti per v1beta3 crypto
+# Configurazione endpoint ufficiale Alpaca per i dati storici/real-time delle Crypto
 DATA_URL = "https://data.alpaca.markets/v1beta3/crypto/us/bars"
 
 # Pulsante per attivazione capitale
@@ -25,11 +25,12 @@ attiva_capitale = st.sidebar.checkbox("🚀 Attiva Capitale Reale", value=False)
 if attiva_capitale:
     st.sidebar.warning("⚠️ ATTENZIONE: Il bot è pronto a operare con capitale reale!")
 
-# Lista delle crypto nel nuovo formato richiesto da Alpaca (senza barra)
-crypto_maior = ["BTCUSD", "ETHUSD", "SOLUSD"]
-universo_hunter = ["DOGEUSD", "SHIBUSD", "PEPEUSD", "WIFUSD", "BONKUSD"]
+# --- FORMATO SIMBOLI AGGIORNATO PER ALPACA V1BETA3 ---
+# Se il server restituisce errore, usiamo i simboli puri richiesti dal feed USA
+crypto_maior = ["BTC/USD", "ETH/USD", "SOL/USD"]
+universo_hunter = ["DOGE/USD", "SHIB/USD", "PEPE/USD", "WIF/USD", "BONK/USD"]
 
-# Funzione per calcolare l'RSI matematicamente corretta
+# Funzione per calcolare l'RSI
 def calcola_rsi(prezzi, periodi=14):
     if len(prezzi) < periodi + 1:
         return 50.0
@@ -37,7 +38,6 @@ def calcola_rsi(prezzi, periodi=14):
     guadagni = variazioni.clip(lower=0)
     perdite = -variazioni.clip(upper=0)
     
-    # Calcolo della media mobile esponenziale corretta
     media_guadagni = guadagni.ewm(span=periodi, adjust=False).mean()
     media_perdite = perdite.ewm(span=periodi, adjust=False).mean()
     
@@ -48,15 +48,13 @@ def calcola_rsi(prezzi, periodi=14):
 # Funzione per scaricare i dati reali da Alpaca
 def ottieni_dati_crypto(simbolo, key, secret):
     if not key or not secret:
-        return {"Prezzo ($)": "Inserisci le chiavi", "RSI (2m)": "--", "Stato": "Chiavi mancanti nella barra laterale"}
+        return {"Prezzo ($)": "Inserisci le chiavi", "RSI (2m)": "--", "Stato": "Chiavi mancanti"}
     
-    # Intestazioni di sicurezza standard per Alpaca
     headers = {
         "APCA-API-KEY-ID": key,
         "APCA-API-SECRET-KEY": secret
     }
     
-    # Parametri richiesti dall'API di Alpaca per le crypto
     params = {
         "symbols": simbolo,
         "timeframe": "2Min",
@@ -65,26 +63,34 @@ def ottieni_dati_crypto(simbolo, key, secret):
     
     try:
         risposta = requests.get(DATA_URL, headers=headers, params=params)
+        
+        # Se fallisce con la barra, il sistema fa un secondo tentativo automatico senza barra (formato misto)
+        if risposta.status_code == 400 and "/" in simbolo:
+            simbolo_alternativo = simbolo.replace("/", "")
+            params["symbols"] = simbolo_alternativo
+            risposta = requests.get(DATA_URL, headers=headers, params=params)
+            simbolo = simbolo_alternativo
+
         if risposta.status_code == 200:
             dati = risposta.json()
             barre = dati.get("bars", {}).get(simbolo, [])
             if barre:
                 prezzi_chiusura = [b["c"] for b in barre]
-                ultimo_prezzo = prezzi_chiusura[-1]
+                ultimo_prezzo = prezzi_chicursori = prezzi_chiusura[-1]
                 rsi_attuale = calcola_rsi(prezzi_chiusura)
                 
                 stato = "🔄 In Attesa"
-                if rsi_attuale < 30: stato = "🟢 IPERVENDUTO (COMPRA)"
-                elif rsi_attuale > 70: stato = "🔴 IPERCOMPRATO (VENDI)"
+                if rsi_attuale < 30: stato = "🟢 IPERVENDUTO"
+                elif rsi_attuale > 70: stato = "🔴 IPERCOMPRATO"
                 
                 return {"Prezzo ($)": ultimo_prezzo, "RSI (2m)": rsi_attuale, "Stato": stato}
             else:
-                return {"Prezzo ($)": "Nessun dato", "RSI (2m)": "--", "Stato": "Alpaca non ha barre recenti per questo token"}
+                return {"Prezzo ($)": "No Data", "RSI (2m)": "--", "Stato": "Nessuna barra recente"}
         elif risposta.status_code == 401:
-            return {"Prezzo ($)": "Errore 401", "RSI (2m)": "--", "Stato": "Chiavi Rifiutate da Alpaca (Errate o Scadute)"}
-        return {"Prezzo ($)": "Errore", "RSI (2m)": "--", "Stato": f"Errore Alpaca: {risposta.status_code}"}
+            return {"Prezzo ($)": "Errore 401", "RSI (2m)": "--", "Stato": "Chiavi Rifiutate"}
+        return {"Prezzo ($)": "Errore", "RSI (2m)": "--", "Stato": f"Codice Alpaca: {risposta.status_code}"}
     except Exception as e:
-        return {"Prezzo ($)": "Timeout", "RSI (2m)": "--", "Stato": "Impossibile raggiungere i server di Alpaca"}
+        return {"Prezzo ($)": "Errore", "RSI (2m)": "--", "Stato": "Connessione fallita"}
 
 # --- SEZIONE 1: CRYPTO PRINCIPALI ---
 st.subheader("📈 Crypto Principali (Real-time)")
@@ -113,7 +119,7 @@ for token in universo_hunter:
 df_meme = pd.DataFrame(risultati_meme)
 st.dataframe(df_meme, use_container_width=True)
 
-# Sistema di auto-aggiornamento automatico ogni 10 secondi
+# Aggiornamento automatico ogni 10 secondi
 st.caption(f"Ultimo aggiornamento della dashboard: {datetime.now().strftime('%H:%M:%S')}")
 time.sleep(10)
 st.rerun()
