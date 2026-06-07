@@ -5,7 +5,7 @@ import time
 from datetime import datetime
 
 # Configurazione iniziale della pagina
-st.set_page_config(page_title="Quant Agent Operazione v38.6", layout="wide")
+st.set_page_config(page_title="Quant Agent Ultimate v38.7", layout="wide")
 
 # --- RECUPERO CHIAVI FISSE DAI SECRETS ---
 chiave_fissa_id = st.secrets.get("ALPACA_API_KEY_ID", "")
@@ -42,9 +42,9 @@ st.sidebar.markdown("---")
 attiva_capitale = st.sidebar.checkbox("🚀 Attiva Trading Automatico", value=False)
 
 if attiva_capitale:
-    st.sidebar.warning("⚠️ CORAZZATA ARMATA: Operazioni automatiche abilitate.")
+    st.sidebar.warning("⚠️ RETE COINVOLTA: Algoritmo di scansione in funzione.")
 
-# --- SNELLO E CATTIVO: SOLO SOLDATI REALI CERTIFICATI DA ALPACA ---
+# Asset certificati Alpaca
 EQUIPAGGIO = {
     "👑 I Re del Mercato": ["BTC/USD", "ETH/USD", "SOL/USD"],
     "⚡ I Pilastri Altcoin": ["AVAX/USD", "LINK/USD", "DOT/USD", "LTC/USD", "XRP/USD", "BCH/USD"],
@@ -76,7 +76,8 @@ def ottieni_posizioni_reali(key, secret):
         res = requests.get(url, headers=headers)
         if res.status_code == 200:
             st.session_state.errori_consecutivi = 0
-            return {p["symbol"]: float(p["qty"]) for p in res.json()}
+            # Salva quantità esatta e quantità liquida per evitare frazioni bloccate
+            return {p["symbol"]: {"qty": float(p["qty"]), "asset_id": p["asset_id"]} for p in res.json()}
     except: st.session_state.errori_consecutivi += 1
     return {}
 
@@ -91,26 +92,31 @@ def ottieni_bilancio_conto(key, secret):
     except: pass
     return {"cash": "0.0", "portfolio_value": "0.0"}
 
-def invia_ordine_alpaca(simbolo, lato, qty_dollari, key, secret):
+def invia_ordine_market(simbolo, lato, quantita_o_dollari, is_qty, key, secret):
     url_ordine = f"{BASE_URL}/v2/orders"
     headers = {"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret, "Content-Type": "application/json"}
-    payload = {"symbol": simbolo.replace("/", ""), "notional": str(qty_dollari), "side": lato, "type": "market", "time_in_force": "gtc"}
+    payload = {
+        "symbol": simbolo.replace("/", ""),
+        "side": lato,
+        "type": "market",
+        "time_in_force": "gtc"
+    }
+    if is_qty:
+        payload["qty"] = str(quantita_o_dollari)  # Per vendite millesimali chirurgiche
+    else:
+        payload["notional"] = str(quantita_o_dollari) # Per acquisti in dollari
+        
     try:
         res = requests.post(url_ordine, json=payload, headers=headers)
         return res.status_code == 200 or res.status_code == 201
     except: return False
 
-# --- NUOVA FUNZIONE: PANIC BUTTON DI EVACUAZIONE TOTALE ---
 def panic_button_vendi_tutto(posizioni_reali, key, secret):
-    st.toast("🚨 PANIC BUTTON ATTIVATO! Evacuazione in corso...", icon="⚠️")
-    for simbolo_clean, qty in posizioni_reali.items():
-        url_ordine = f"{BASE_URL}/v2/orders"
-        headers = {"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret, "Content-Type": "application/json"}
-        payload = {"symbol": simbolo_clean, "qty": str(qty), "side": "sell", "type": "market", "time_in_force": "gtc"}
-        try: requests.post(url_ordine, json=payload, headers=headers)
-        except: pass
+    st.toast("🚨 PANIC BUTTON ATTIVATO! Evacuazione totale...", icon="⚠️")
+    for simbolo_clean, dati in posizioni_reali.items():
+        invia_ordine_market(simbolo_clean, "sell", dati["qty"], True, key, secret)
     st.session_state.scatola_nera = {}
-    st.toast("🔥 Portafoglio Crypto completamente liquidato con successo!", icon="💰")
+    st.toast("🔥 Portafoglio completamente azzerato e convertito in Cash!", icon="💰")
     time.sleep(1)
     st.rerun()
 
@@ -140,9 +146,10 @@ def ottieni_e_trada_crypto(simbolo, posizioni_reali, key, secret):
                 if attiva_capitale:
                     condizione = (rsi_attuale < 35) if "Ipervenduto" in tipo_strategia else (rsi_attuale > 65)
                     if condizione and not ha_posizione_reale:
-                        if invia_ordine_alpaca(simbolo, "buy", size_dollari, key, secret):
+                        if invia_ordine_market(simbolo, "buy", size_dollari, False, key, secret):
                             st.session_state.scatola_nera[simbolo] = {"prezzo_acquisto": ultimo_prezzo, "prezzo_massimo": ultimo_prezzo}
                             st.toast(f"🛒 Entrato su {simbolo}", icon="🟢")
+                    
                     if ha_posizione_reale:
                         if simbolo not in st.session_state.scatola_nera:
                             st.session_state.scatola_nera[simbolo] = {"prezzo_acquisto": ultimo_prezzo, "prezzo_massimo": ultimo_prezzo}
@@ -150,12 +157,15 @@ def ottieni_e_trada_crypto(simbolo, posizioni_reali, key, secret):
                         if ultimo_prezzo > dati_pos["prezzo_massimo"]:
                             st.session_state.scatola_nera[simbolo]["prezzo_massimo"] = ultimo_prezzo
                             dati_pos["prezzo_massimo"] = ultimo_prezzo
+                        
                         guadagno_pct = ((ultimo_prezzo - dati_pos["prezzo_acquisto"]) / dati_pos["prezzo_acquisto"]) * 100
                         discesa_dal_massimo = ((dati_pos["prezzo_massimo"] - ultimo_prezzo) / dati_pos["prezzo_massimo"]) * 100
                         stato = f"📦 {round(guadagno_pct, 2)}%"
                         
+                        # SCATTO CHIRURGICO: Vendiamo la quantità precisa presente nel portafoglio Alpaca
                         if guadagno_pct >= trailing_activation and discesa_dal_massimo >= trailing_distance:
-                            if invia_ordine_alpaca(simbolo, "sell", size_dollari, key, secret):
+                            qty_esatta = posizioni_reali.get(simbolo_clean, posizioni_reali.get(simbolo))["qty"]
+                            if invia_ordine_market(simbolo, "sell", qty_esatta, True, key, secret):
                                 st.session_state.storico_profitti.append({
                                     "Ora": datetime.now().strftime('%H:%M:%S'), "Asset": simbolo,
                                     "Perf %": f"+{round(guadagno_pct, 2)}%", "Gain ($)": round((size_dollari * (guadagno_pct / 100)), 2)
@@ -169,14 +179,22 @@ def ottieni_e_trada_crypto(simbolo, posizioni_reali, key, secret):
     except: return {"Prezzo ($)": "Errore", "RSI": "--", "Stato": "Rete"}
 
 # --- GRAFICA TERMINALE OPERATIVO ---
-st.markdown("## 🛰️ Quant Agent Corazzata Terminal v38.6 — FULL POWER")
+st.markdown("## 🛰️ Quant Agent Ultimate Terminal v38.7 — SANDBOX TEST")
 
-# Inserimento visivo del pulsante rosso d'emergenza nella sidebar
+# Sidebar Protocolli
 st.sidebar.markdown("---")
 st.sidebar.subheader("🚨 Protocollo Difesa")
 if st.sidebar.button("💥 PANIC BUTTON: VENDI TUTTO"):
     pos_attuali_pulsante = ottieni_posizioni_reali(alpaca_key, alpaca_secret)
     panic_button_vendi_tutto(pos_attuali_pulsante, alpaca_key, alpaca_secret)
+
+# MANOVRALITÀ DI RESET RAPIDO SENZA FARE IL BOOT
+if st.sidebar.button("🔄 Reset Dati Sessione"):
+    st.session_state.scatola_nera = {}
+    st.session_state.storico_profitti = []
+    st.toast("Tabula Rasa effettuata con successo!", icon="🧼")
+    time.sleep(0.5)
+    st.rerun()
 
 if st.session_state.errori_consecutivi >= 3:
     st.session_state.errori_consecutivi = 0
@@ -189,7 +207,7 @@ totale_guadagnato = sum([t["Gain ($)"] for t in st.session_state.storico_profitt
 c1, c2, c3 = st.columns(3)
 with c1: st.metric("💰 Cash Disponibile", f"$ {info_conto['cash']}")
 with c2: st.metric("🛡️ Capitale Corazzata", f"$ {info_conto['portfolio_value']}")
-with c3: st.metric("💵 CASSA PROFITTI SESSIONE", f"$ {round(totale_guadagnato, 2)}", delta="In Diretta")
+with c3: st.metric("💵 CASSA PROFITTI SESSIONE", f"$ {round(totale_guadagnato, 2)}", delta="Simulatore Sandbox")
 
 @st.cache_data(ttl=8)
 def scansiona_tutto(pos_chiavi_str, key, secret):
@@ -199,7 +217,7 @@ def scansiona_tutto(pos_chiavi_str, key, secret):
 
 dati_globali = scansiona_tutto(str(pos_reali), alpaca_key, alpaca_secret)
 
-# Mostra le griglie pulite senza asset inutili
+# Mostra le griglie
 for categoria, monete in EQUIPAGGIO.items():
     st.markdown(f"### {categoria}")
     righe_cat = []
@@ -207,6 +225,24 @@ for categoria, monete in EQUIPAGGIO.items():
         dati_c = dati_globali.get(coin, {"Prezzo ($)": "--", "RSI": "--", "Stato": "--"})
         righe_cat.append({"Asset": coin, "Prezzo Attuale": dati_c["Prezzo ($)"], "RSI (2 Min)": dati_c["RSI"], "Stato Operativo / Profitto": dati_c["Stato"]})
     st.dataframe(pd.DataFrame(righe_cat), use_container_width=True, hide_index=True)
+
+# --- PANEL DI STRESS-TEST MANUALE INTERATTIVO ---
+st.markdown("---")
+st.subheader("🛠️ Console di Controllo Manuale (Stress-Test Sandbox)")
+col_test1, col_test2 = st.columns(2)
+
+with col_test1:
+    token_scelto = st.selectbox("Seleziona Asset da Forzare", tutti_i_soldati)
+    if st.button("🛒 FORZA ACQUISTO MANUALE (Test)"):
+        if invia_ordine_market(token_scelto, "buy", size_dollari, False, alpaca_key, alpaca_secret):
+            st.success(f"Comando eseguito! Inviato ordine d'acquisto per {token_scelto}.")
+            time.sleep(1)
+            st.rerun()
+        else:
+            st.error("Errore nell'invio del comando ad Alpaca. Controlla le chiavi.")
+
+with col_test2:
+    st.info("💡 **Come testare il Trailing Stop stasera:**\n\n1. Seleziona una moneta (es. SOL/USD) e clicca sul pulsante di acquisto forzato.\n2. La vedrai apparire istantaneamente nel portafoglio di Alpaca e nella tabella d'Inseguimento qui sotto.\n3. Guarda come la Scatola Nera memorizza il prezzo d'ingresso e comincia a rincorrere i picchi!")
 
 if st.session_state.storico_profitti:
     st.markdown("---")
@@ -218,6 +254,6 @@ if st.session_state.scatola_nera:
     st.subheader("📊 Inseguimento Scatola Nera Attiva")
     st.dataframe(pd.DataFrame(st.session_state.scatola_nera).T, use_container_width=True)
 
-st.caption(f"Radar pronto all'opera. Orario di bordo: {datetime.now().strftime('%H:%M:%S')}")
+st.caption(f"Terminale operativo pronto. Orario di bordo: {datetime.now().strftime('%H:%M:%S')}")
 time.sleep(10)
 st.rerun()
