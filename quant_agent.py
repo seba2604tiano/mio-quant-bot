@@ -7,7 +7,7 @@ import os
 from datetime import datetime, timedelta, timezone
 
 # Configurazione iniziale della pagina
-st.set_page_config(page_title="Quant Agent Global v42.0", layout="wide")
+st.set_page_config(page_title="Quant Agent Global v42.1", layout="wide")
 
 CACHE_FILE = "storico_profitti_cache.json"
 CONFIG_FILE = "config_fortezza.json"
@@ -65,8 +65,8 @@ st.sidebar.subheader("💰 Gestione Munizioni Base")
 size_dollari = st.sidebar.slider("Capitale Base per Trade ($)", min_value=5, max_value=500, value=50, step=5)
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("⚙️ Parametri Take Profit / Trailing")
-st.sidebar.info("La nuova logica chiude il 50% al +1.5% e segue il resto con l'ATR.")
+st.sidebar.subheader("⚙️ Parametri di Uscita e Taglio Perdite")
+hard_stop_loss = st.sidebar.slider("🛡️ Livello 3: Hard Stop Loss (%)", min_value=1.0, max_value=10.0, value=3.0, step=0.5, help="Taglio netto e immediato delle perdite dal prezzo di ingresso")
 trailing_distance = st.sidebar.slider("Distanza Fallback (% dal massimo, se ATR = 0)", min_value=0.5, max_value=5.0, value=1.0, step=0.1)
 
 st.sidebar.markdown("---")
@@ -151,7 +151,7 @@ def invia_ordine_market(simbolo, lato, quantita_o_dollari, is_qty, key, secret):
         return res.status_code == 200 or res.status_code == 201
     except: return False
 
-# --- SCANNER CORE BATCH OTTIMIZZATO PER FILTRI DI MERCATO ---
+# --- SCANNER CORE BATCH ---
 def scarica_dati_globali_batch(key, secret):
     if not key or not secret: return {}
     headers = {"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret}
@@ -163,7 +163,6 @@ def scarica_dati_globali_batch(key, secret):
     ora_inizio_crypto = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
     ora_inizio_stocks = (datetime.now(timezone.utc) - timedelta(days=4)).strftime("%Y-%m-%dT%H:%M:%SZ")
     
-    # 1. RETRIEVAL PER CRYPTO VALIDATE
     if crypto_assets:
         try:
             url_crypto = "https://data.alpaca.markets/v1beta3/crypto/us/bars"
@@ -175,11 +174,9 @@ def scarica_dati_globali_batch(key, secret):
                     if barre:
                         df = pd.DataFrame(barre)
                         chiusure = df["c"].tolist()
-                        
                         high, low, close_prev = df["h"], df["l"], df["c"].shift(1)
                         tr = pd.concat([high - low, (high - close_prev).abs(), (low - close_prev).abs()], axis=1).max(axis=1)
                         atr_val = tr.rolling(14).mean().iloc[-1] if len(tr) >= 14 else 0
-                        
                         mappa_prezzi[s] = {"prezzo": chiusure[-1], "rsi": calcola_rsi(chiusure), "ema200": calcola_ema200(chiusure), "atr": atr_val}
                     else: mappa_prezzi[s] = {"prezzo": "No Feed", "rsi": "--", "ema200": None, "atr": 0}
             else:
@@ -187,7 +184,6 @@ def scarica_dati_globali_batch(key, secret):
         except:
             for s in crypto_assets: mappa_prezzi[s] = {"prezzo": "Errore Rete", "rsi": "--", "ema200": None, "atr": 0}
 
-    # 2. RETRIEVAL PER TRADITIONAL MARKETS
     if stock_assets:
         try:
             url_stocks = "https://data.alpaca.markets/v2/stocks/bars"
@@ -199,11 +195,9 @@ def scarica_dati_globali_batch(key, secret):
                     if barre:
                         df = pd.DataFrame(barre)
                         chiusure = df["c"].tolist()
-                        
                         high, low, close_prev = df["h"], df["l"], df["c"].shift(1)
                         tr = pd.concat([high - low, (high - close_prev).abs(), (low - close_prev).abs()], axis=1).max(axis=1)
                         atr_val = tr.rolling(14).mean().iloc[-1] if len(tr) >= 14 else 0
-                        
                         mappa_prezzi[s] = {"prezzo": chiusure[-1], "rsi": calcola_rsi(chiusure), "ema200": calcola_ema200(chiusure), "atr": atr_val}
                     else: mappa_prezzi[s] = {"prezzo": "Chiuso/NoFeed", "rsi": "--", "ema200": None, "atr": 0}
             else:
@@ -213,15 +207,15 @@ def scarica_dati_globali_batch(key, secret):
             
     return mappa_prezzi
 
-# --- INTERFACCIA UTENTE TERMINALE ---
-st.markdown("## 🛰️ Quant Agent Global Terminal v42.0 • Pro Exit Mode")
+# --- INTERFACCIA UTENTE ---
+st.markdown("## 🛰️ Quant Agent Global Terminal v42.1 • 3-Tier Security")
 
 if attiva_capitale:
-    st.error("🚨 **IMPERIO ARMATO ATTIVO**: Monitoraggio feed istituzionali e trading algoritmico in esecuzione.")
+    st.error("🚨 **IMPERIO ARMATO ATTIVO**: Monitoraggio feed istituzionali e protezione acquisti multilivello in esecuzione.")
 else:
     st.info("🛡️ **MODALITÀ VEDETTA IN SICUREZZA**: Visualizzazione metriche attiva. Nessun ordine verrà inoltrato.")
 
-# Pulsanti di sicurezza nel pannello laterale
+# Pulsanti di sicurezza sidebar
 st.sidebar.markdown("---")
 st.sidebar.subheader("🚨 Protocollo Difesa")
 if st.sidebar.button("💥 PANIC BUTTON MANUALE"):
@@ -243,7 +237,7 @@ if st.sidebar.button("🔄 Reset Dati Sessione"):
     time.sleep(0.5)
     st.rerun()
 
-# Recupero Informazioni Economiche
+# Recupero dati conto e posizioni
 info_conto = ottieni_bilancio_conto(alpaca_key, alpaca_secret)
 pos_reali = ottieni_posizioni_reali(alpaca_key, alpaca_secret)
 totale_guadagnato = sum([t["Gain ($)"] for t in st.session_state.storico_profitti])
@@ -251,9 +245,8 @@ totale_guadagnato = sum([t["Gain ($)"] for t in st.session_state.storico_profitt
 c1, c2, c3 = st.columns(3)
 with c1: st.metric("💰 Cash Disponibile", f"$ {info_conto['cash']}")
 with c2: st.metric("🛡️ Capitale Corazzata", f"$ {info_conto['portfolio_value']}")
-with c3: st.metric("💵 CASSA PROFITTI GLOBAL", f"$ {round(totale_guadagnato, 2)}", delta="Asset Verificati Connessi")
+with c3: st.metric("💵 CASSA PROFITTI GLOBAL", f"$ {round(totale_guadagnato, 2)}", delta="Sincronizzazione 3-Tier Attiva")
 
-# Lancio scansioni cicliche
 dati_mercato_freschi = scarica_dati_globali_batch(alpaca_key, alpaca_secret)
 
 tabella_finale_mappa = {}
@@ -269,8 +262,10 @@ for coin in tutti_i_soldati:
     size_ottimizzata = size_dollari
     
     if isinstance(ultimo_prezzo, (int, float)):
-        ha_posizione = coin_clean in pos_reali or coin in pos_reali
-        if not ha_posizione and coin in st.session_state.scatola_nera:
+        ha_posizione_reale = coin_clean in pos_reali or coin in pos_reali
+        
+        # Sincronizzazione automatica se la posizione reale scompare su Alpaca
+        if not ha_posizione_reale and coin in st.session_state.scatola_nera:
             del st.session_state.scatola_nera[coin]
             
         trend_rialzista = True if (ema200_attuale is None or ultimo_prezzo > ema200_attuale) else False
@@ -283,75 +278,117 @@ for coin in tutti_i_soldati:
         else:
             size_ottimizzata = size_dollari
             
+        # --- LIVEL 1: LUCCHETTO ANTI-MITRAGLIATRICE ---
+        # Un asset viene considerato occupato sia se esiste su Alpaca sia se è registrato localmente
+        blocco_acquisto = ha_posizione_reale or (coin in st.session_state.scatola_nera)
+            
         if attiva_capitale:
             if "Ipervenduto" in tipo_strategia:
                 condizione_ingresso = (rsi_attuale < 35) and trend_rialzista
             else:
                 condizione_ingresso = (rsi_attuale > 65)
                 
-            if condizione_ingresso and not ha_posizione:
+            # Il bot compra SOLO se non c'è alcun blocco attivo sull'asset
+            if condizione_ingresso and not blocco_acquisto:
                 if invia_ordine_market(coin, "buy", size_ottimizzata, False, alpaca_key, alpaca_secret):
-                    st.session_state.scatola_nera[coin] = {"prezzo_acquisto": ultimo_prezzo, "prezzo_massimo": ultimo_prezzo, "piramidato": False, "size_effettiva": size_ottimizzata}
-                    invia_notifica_telegram(f"🛒 NUOVO ACQUISTO ADATTIVO!\nAsset: {coin}\nPrezzo: ${ultimo_prezzo}\nRSI: {rsi_attuale}\nSize Adattata ATR: ${size_ottimizzata}")
+                    st.session_state.scatola_nera[coin] = {
+                        "prezzo_acquisto": ultimo_prezzo, 
+                        "prezzo_massimo": ultimo_prezzo, 
+                        "piramidato": False, 
+                        "size_effettiva": size_ottimizzata,
+                        "venduto_parziale": False,
+                        "break_even_attivo": False
+                    }
+                    invia_notifica_telegram(f"🛒 ACQUISTO EFFETTUATO!\nAsset: {coin}\nPrezzo: ${ultimo_prezzo}\nSize: ${size_ottimizzata}\n[Lucchetto d'ingresso attivato]")
                     st.toast(f"🛒 Acquistato {coin} (${size_ottimizzata})", icon="🟢")
             
-            if ha_posizione:
+            if ha_posizione_reale:
                 if coin not in st.session_state.scatola_nera:
-                    st.session_state.scatola_nera[coin] = {"prezzo_acquisto": ultimo_prezzo, "prezzo_massimo": ultimo_prezzo, "piramidato": False, "size_effettiva": size_dollari}
+                    st.session_state.scatola_nera[coin] = {
+                        "prezzo_acquisto": ultimo_prezzo, 
+                        "prezzo_massimo": ultimo_prezzo, 
+                        "piramidato": False, 
+                        "size_effettiva": size_dollari,
+                        "venduto_parziale": False,
+                        "break_even_attivo": False
+                    }
                 
                 dati_pos = st.session_state.scatola_nera[coin]
                 
-                # Inseguimento del prezzo massimo
-                if ultimo_prezzo > dati_pos["prezzo_massimo"]:
+                if ultimo_prezzo > dati_pos.get("prezzo_massimo", ultimo_prezzo):
                     st.session_state.scatola_nera[coin]["prezzo_massimo"] = ultimo_prezzo
                     dati_pos["prezzo_massimo"] = ultimo_prezzo
                 
                 guadagno_pct = ((ultimo_prezzo - dati_pos["prezzo_acquisto"]) / dati_pos["prezzo_acquisto"]) * 100
                 stato = f"📦 {round(guadagno_pct, 2)}%"
                 
-                if "FOMO" in tipo_strategia and rsi_attuale > 78 and not dati_pos.get("piramidato", False):
-                    if invia_ordine_market(coin, "buy", size_ottimizzata, False, alpaca_key, alpaca_secret):
-                        st.session_state.scatola_nera[coin]["prezzo_acquisto"] = (dati_pos["prezzo_acquisto"] + ultimo_prezzo) / 2
-                        st.session_state.scatola_nera[coin]["piramidato"] = True
-                        st.session_state.scatola_nera[coin]["size_effettiva"] += size_ottimizzata
+                # --- LIVELLO 3: HARD STOP LOSS DI EMERGENZA ---
+                if guadagno_pct <= -hard_stop_loss:
+                    qty_rimanente = pos_reali.get(coin_clean, pos_reali.get(coin, {})).get("qty", 0)
+                    if qty_rimanente > 0:
+                        if invia_ordine_market(coin, "sell", qty_rimanente, True, alpaca_key, alpaca_secret):
+                            capitale_impiegato = dati_pos.get("size_effettiva", size_dollari)
+                            bottino_dollari = round((capitale_impiegato * (guadagno_pct / 100)), 2)
+                            st.session_state.storico_profitti.append({
+                                "Ora": datetime.now().strftime('%H:%M:%S'), "Asset": coin,
+                                "Perf %": f"{round(guadagno_pct, 2)}% [HARD STOP]", "Gain ($)": bottino_dollari
+                            })
+                            salva_storico_persistente(st.session_state.storico_profitti)
+                            invia_notifica_telegram(f"🚨 HARD STOP LOSS ATTIVATO SU {coin}!\nPerformance: {round(guadagno_pct, 2)}%\nPerdita: ${bottino_dollari}")
+                            del st.session_state.scatola_nera[coin]
+                            stato = "💥 Hard Stop"
+                            continue
                 
-                # --- NUOVA LOGICA EXIT MULTI-STADIO ---
-                
-                # FASE 1: SCALING OUT (+1.5%)
+                # --- LIVELLO 2: SCALING OUT (VENDITA 50%) ---
                 if guadagno_pct >= 1.5 and not dati_pos.get("venduto_parziale", False):
                     qty_totale = pos_reali.get(coin_clean, pos_reali.get(coin, {})).get("qty", 0)
                     if qty_totale > 0:
                         qty_da_vendere = round(qty_totale / 2, 4)
                         if invia_ordine_market(coin, "sell", qty_da_vendere, True, alpaca_key, alpaca_secret):
                             st.session_state.scatola_nera[coin]["venduto_parziale"] = True
-                            invia_notifica_telegram(f"✅ TAKE PROFIT PARZIALE (50%) su {coin}\nPerformance: +{round(guadagno_pct, 2)}%")
-                            st.toast(f"Venduto 50% di {coin}", icon="💰")
+                            st.session_state.scatola_nera[coin]["break_even_attivo"] = True  # Innesco Break-Even
+                            invia_notifica_telegram(f"✅ TAKE PROFIT PARZIALE (50%) su {coin}\nPerformance: +{round(guadagno_pct, 2)}%\n🛡️ Blindatura Break-Even attiva sulla quota restante.")
+                            st.toast(f"Venduto 50% di {coin}. Break-Even attivo!", icon="🛡️")
 
-                # FASE 2: TRAILING STOP ATR DINAMICO
+                # --- LIVELLO 2.5: INTERVENTO PROTEZIONE BREAK-EVEN ---
+                if dati_pos.get("break_even_attivo", False) and ultimo_prezzo <= dati_pos["prezzo_acquisto"]:
+                    qty_rimanente = pos_reali.get(coin_clean, pos_reali.get(coin, {})).get("qty", 0)
+                    if qty_rimanente > 0:
+                        if invia_ordine_market(coin, "sell", qty_rimanente, True, alpaca_key, alpaca_secret):
+                            st.session_state.storico_profitti.append({
+                                "Ora": datetime.now().strftime('%H:%M:%S'), "Asset": coin,
+                                "Perf %": "0.0% [BREAK-EVEN]", "Gain ($)": 0.0
+                            })
+                            salva_storico_persistente(st.session_state.storico_profitti)
+                            invia_notifica_telegram(f"🛡️ PROTEZIONE BREAK-EVEN ATTIVATA SU {coin}!\nSeconda metà liquidata a rischio zero.")
+                            del st.session_state.scatola_nera[coin]
+                            stato = "🛡️ Break-Even"
+                            continue
+
+                # TRAILING STOP ATR DINAMICO STANDARD
                 stop_dinamico = dati_pos["prezzo_massimo"] - (2 * atr_attuale) if atr_attuale > 0 else dati_pos["prezzo_massimo"] * (1 - (trailing_distance/100))
                 
-                if ultimo_prezzo <= stop_dinamico and guadagno_pct > -3.0: # Protezione da rumore immediato
+                if ultimo_prezzo <= stop_dinamico:
                     qty_rimanente = pos_reali.get(coin_clean, pos_reali.get(coin, {})).get("qty", 0)
                     if qty_rimanente > 0:
                         if invia_ordine_market(coin, "sell", qty_rimanente, True, alpaca_key, alpaca_secret):
                             capitale_impiegato = dati_pos.get("size_effettiva", size_dollari)
                             bottino_dollari = round((capitale_impiegato * (guadagno_pct / 100)), 2)
-                            
                             st.session_state.storico_profitti.append({
                                 "Ora": datetime.now().strftime('%H:%M:%S'), "Asset": coin,
                                 "Perf %": f"{round(guadagno_pct, 2)}%", "Gain ($)": bottino_dollari
                             })
                             salva_storico_persistente(st.session_state.storico_profitti)
-                            invia_notifica_telegram(f"💥 CHIUSURA ATR SU {coin}!\nPerformance Finale: {round(guadagno_pct, 2)}%\nProfitto: ${bottino_dollari}")
+                            invia_notifica_telegram(f"💥 CHIUSURA TRAILING ATR SU {coin}!\nPerformance Finale: {round(guadagno_pct, 2)}%\nProfitto: ${bottino_dollari}")
                             del st.session_state.scatola_nera[coin]
-                            stato = "💥 Chiuso!"
-        elif ha_posizione: 
+                            stato = "💥 Chiuso ATR"
+        elif ha_posizione_reale: 
             stato = "📦 In Posizione"
 
     trend_str = "🟢 Rialzista" if (ema200_attuale is None or ultimo_prezzo > ema200_attuale) else "🔴 Ribassista"
     tabella_finale_mappa[coin] = {"Prezzo": ultimo_prezzo, "RSI": rsi_attuale, "Trend (EMA200)": trend_str, "Size Dinamica ($)": round(size_ottimizzata, 2), "Stato": stato}
 
-# --- RENDERING PLANCE DI COMANDO PULITE E ROBUSTE ---
+# --- RENDERING PLANCE DI COMANDO ---
 for categoria, monete in EQUIPAGGIO.items():
     st.markdown(f"### {categoria}")
     righe_cat = []
@@ -387,7 +424,14 @@ if st.button("🛒 FORZA ACQUISTO MANUALE (Test)"):
     size_t = tabella_finale_mappa.get(token_scelto, {"Size Dinamica ($)": size_dollari})["Size Dinamica ($)"]
     if invia_ordine_market(token_scelto, "buy", size_t, False, alpaca_key, alpaca_secret):
         prezzo_m = tabella_finale_mappa.get(token_scelto, {"Prezzo": 1})["Prezzo"]
-        st.session_state.scatola_nera[token_scelto] = {"prezzo_acquisto": prezzo_m if isinstance(prezzo_m, (int, float)) else 1, "prezzo_massimo": prezzo_m if isinstance(prezzo_m, (int, float)) else 1, "piramidato": False, "size_effettiva": size_t}
+        st.session_state.scatola_nera[token_scelto] = {
+            "prezzo_acquisto": prezzo_m if isinstance(prezzo_m, (int, float)) else 1, 
+            "prezzo_massimo": prezzo_m if isinstance(prezzo_m, (int, float)) else 1, 
+            "piramidato": False, 
+            "size_effettiva": size_t,
+            "venduto_parziale": False,
+            "break_even_attivo": False
+        }
         invia_notifica_telegram(f"🚀 ORDINE MANUALE FORZATO DI TEST su {token_scelto} per ${size_t}!")
         st.success(f"Inviato ordine globale per {token_scelto}.")
         time.sleep(0.5)
@@ -398,6 +442,6 @@ if st.session_state.storico_profitti:
     st.subheader("💰 Registro dei Bottini di Guerra Persistente")
     st.dataframe(pd.DataFrame(st.session_state.storico_profitti), use_container_width=True)
 
-st.caption(f"Fortezza Hyperdrive v42.0 online. Log Orario: {datetime.now().strftime('%H:%M:%S')}")
+st.caption(f"Fortezza Hyperdrive v42.1 online. Log Orario: {datetime.now().strftime('%H:%M:%S')}")
 time.sleep(10)
 st.rerun()
