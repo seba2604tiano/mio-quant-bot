@@ -7,7 +7,7 @@ import os
 from datetime import datetime, timedelta, timezone
 
 # Configurazione iniziale della pagina
-st.set_page_config(page_title="Quant Agent Global v42.2", layout="wide")
+st.set_page_config(page_title="Quant Agent Global v43.0", layout="wide")
 
 CACHE_FILE = "storico_profitti_cache.json"
 CONFIG_FILE = "config_fortezza.json"
@@ -66,8 +66,8 @@ size_dollari = st.sidebar.slider("Capitale Base per Trade ($)", min_value=5, max
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("⚙️ Parametri di Uscita e Taglio Perdite")
-hard_stop_loss = st.sidebar.slider("🛡️ Livello 3: Hard Stop Loss (%)", min_value=1.0, max_value=10.0, value=3.0, step=0.5, help="Taglio netto e immediato delle perdite dal prezzo di ingresso")
-trailing_distance = st.sidebar.slider("Distanza Fallback (% dal massimo, se ATR = 0)", min_value=0.5, max_value=5.0, value=1.0, step=0.1)
+hard_stop_loss = st.sidebar.slider("🛡️ Livello 3: Hard Stop Loss (%)", min_value=1.0, max_value=10.0, value=3.0, step=0.5)
+trailing_distance = st.sidebar.slider("Distanza Fallback (% dal massimo)", min_value=0.5, max_value=5.0, value=1.0, step=0.1)
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("🏹 Strategia d'Ingresso")
@@ -78,11 +78,13 @@ st.sidebar.subheader("🎛️ Pannello Armamenti")
 attiva_capitale = st.sidebar.toggle("🚀 ATTIVA TRADING AUTOMATICO", value=stato_precedente)
 salva_config_stato(attiva_capitale)
 
-# --- STRUTTURA MULTI-ASSET GLOBAL IMPERIUM EXPANDED (v42.2) ---
+# --- STRUTTURA MULTI-ASSET GLOBAL v43.0 (FILTRATA ED ESPANSA) ---
 EQUIPAGGIO = {
-    "👑 Crypto Blue-Chips Ufficiali (24/7)": ["BTC/USD", "ETH/USD", "SOL/USD"],
-    "⚡ Crypto Negoziabili ad Alta Liquidità": ["LTC/USD", "BCH/USD", "LINK/USD", "UNI/USD"],
-    "🇺🇸 I Giganti di Wall Street (Azioni USA)": ["AAPL", "TSLA", "NVDA", "AMZN", "MSFT", "GOOGL", "META", "NFLX", "AMD", "PLTR"],
+    "👑 Crypto Blue-Chips Ufficiali (24/7)": ["BTC/USD", "ETH/USD"],
+    "🇺🇸 I Giganti di Wall Street (Azioni USA)": [
+        "AAPL", "TSLA", "NVDA", "AMZN", "MSFT", "GOOGL", "META", "NFLX", "AMD", "PLTR",
+        "SMCI", "MU", "AVGO", "COIN", "LLY", "JPM", "XOM", "COST", "DIS", "NKE"
+    ],
     "📊 ETF Indici e Settori Chiave USA": ["SPY", "QQQ", "SOXX", "XLF"],
     "📀 Metalli Preziosi (ETF Safe Haven)": ["GLD", "SLV"]
 }
@@ -152,7 +154,6 @@ def invia_ordine_market(simbolo, lato, quantita_o_dollari, is_qty, key, secret):
         return res.status_code == 200 or res.status_code == 201
     except: return False
 
-# --- SCANNER CORE BATCH ---
 def scarica_dati_globali_batch(key, secret):
     if not key or not secret: return {}
     headers = {"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret}
@@ -209,7 +210,7 @@ def scarica_dati_globali_batch(key, secret):
     return mappa_prezzi
 
 # --- INTERFACCIA UTENTE ---
-st.markdown("## 🛰️ Quant Agent Global Terminal v42.2 • Imperium Expanded")
+st.markdown("## 🛰️ Quant Agent Global Terminal v43.0 • Imperium Maxima")
 
 if attiva_capitale:
     st.error("🚨 **IMPERIO ARMATO ATTIVO**: Monitoraggio feed istituzionali e protezione acquisti multilivello in esecuzione.")
@@ -224,7 +225,7 @@ if st.sidebar.button("💥 PANIC BUTTON MANUALE"):
     for simbolo_clean, dati in posizioni_attuali.items():
         invia_ordine_market(simbolo_clean, "sell", dati["qty"], True, alpaca_key, alpaca_secret)
     st.session_state.scatola_nera = {}
-    invia_notifica_telegram("⚠️ PROTOCOLLO LIQUIDAZIONE TOTALE ATTIVATO MANUALE! Tutte le posizioni chiuse.")
+    invia_notifica_telegram("⚠️ PROTOCOLLO LIQUIDAZIONE TOTALE ATTIVATO MANUALE!")
     st.toast("Impero interamente liquidato!", icon="🔥")
     time.sleep(0.5)
     st.rerun()
@@ -238,7 +239,7 @@ if st.sidebar.button("🔄 Reset Dati Sessione"):
     time.sleep(0.5)
     st.rerun()
 
-# Recupero dati conto e posizioni
+# Metriche principali di conto
 info_conto = ottieni_bilancio_conto(alpaca_key, alpaca_secret)
 pos_reali = ottieni_posizioni_reali(alpaca_key, alpaca_secret)
 totale_guadagnato = sum([t["Gain ($)"] for t in st.session_state.storico_profitti])
@@ -247,6 +248,29 @@ c1, c2, c3 = st.columns(3)
 with c1: st.metric("💰 Cash Disponibile", f"$ {info_conto['cash']}")
 with c2: st.metric("🛡️ Capitale Corazzata", f"$ {info_conto['portfolio_value']}")
 with c3: st.metric("💵 CASSA PROFITTI GLOBAL", f"$ {round(totale_guadagnato, 2)}", delta="Sincronizzazione 3-Tier Attiva")
+
+# --- 🏆 NUOVO BLOCCO: BACHECA DELLA GIOIA TATTICA ---
+st.markdown("---")
+vincenti = sum(1 for t in st.session_state.storico_profitti if float(t.get("Gain ($)", 0.0)) > 0)
+pareggi = sum(1 for t in st.session_state.storico_profitti if "[BREAK-EVEN]" in str(t.get("Perf %", "")))
+stop_loss = sum(1 for t in st.session_state.storico_profitti if "[HARD STOP]" in str(t.get("Perf %", "")))
+
+bg_c1, bg_c2 = st.columns([1, 2])
+with bg_c1:
+    st.markdown(f"#### 📊 Contatore delle Vittorie\n🔥 **{vincenti}** Vincenti  |  🤝 **{pareggi}** Pareggi (BE)  |  🚨 **{stop_loss}** Stop Loss")
+
+with bg_c2:
+    trade_vincenti_lista = [t for t in st.session_state.storico_profitti if float(t.get("Gain ($)", 0.0)) > 0]
+    if trade_vincenti_lista:
+        miglior_colpo = max(trade_vincenti_lista, key=lambda x: float(x.get("Gain ($)", 0.0)))
+        st.markdown(f"#### 🥇 Top Gun della Sessione\n🚀 Miglior Colpo: **{miglior_colpo['Asset']}** | Performance: **{miglior_colpo['Perf %']}** | Bottino: **+${miglior_colpo['Gain ($)']}**")
+    else:
+        st.markdown("#### 🥇 Top Gun della Sessione\n🛰️ In attesa del primo bersaglio utile. Radar in caccia.")
+
+if trade_vincenti_lista:
+    with st.expander("🏆 HALL OF FAME DEI PROFITTI (Solo Colpi in Verde)", expanded=True):
+        st.dataframe(pd.DataFrame(trade_vincenti_lista), use_container_width=True, hide_index=True)
+st.markdown("---")
 
 dati_mercato_freschi = scarica_dati_globali_batch(alpaca_key, alpaca_secret)
 
@@ -265,7 +289,6 @@ for coin in tutti_i_soldati:
     if isinstance(ultimo_prezzo, (int, float)):
         ha_posizione_reale = coin_clean in pos_reali or coin in pos_reali
         
-        # Sincronizzazione automatica se la posizione reale scompare su Alpaca
         if not ha_posizione_reale and coin in st.session_state.scatola_nera:
             del st.session_state.scatola_nera[coin]
             
@@ -279,7 +302,6 @@ for coin in tutti_i_soldati:
         else:
             size_ottimizzata = size_dollari
             
-        # --- LIVEL 1: LUCCHETTO ANTI-MITRAGLIATRICE ---
         blocco_acquisto = ha_posizione_reale or (coin in st.session_state.scatola_nera)
             
         if attiva_capitale:
@@ -288,7 +310,6 @@ for coin in tutti_i_soldati:
             else:
                 condizione_ingresso = (rsi_attuale > 65)
                 
-            # Il bot compra SOLO se non c'è alcun blocco attivo sull'asset
             if condizione_ingresso and not blocco_acquisto:
                 if invia_ordine_market(coin, "buy", size_ottimizzata, False, alpaca_key, alpaca_secret):
                     st.session_state.scatola_nera[coin] = {
@@ -299,7 +320,7 @@ for coin in tutti_i_soldati:
                         "venduto_parziale": False,
                         "break_even_attivo": False
                     }
-                    invia_notifica_telegram(f"🛒 ACQUISTO EFFETTUATO!\nAsset: {coin}\nPrezzo: ${ultimo_prezzo}\nSize: ${size_ottimizzata}\n[Lucchetto d'ingresso attivato]")
+                    invia_notifica_telegram(f"🛒 ACQUISTO EFFETTUATO!\nAsset: {coin}\nPrezzo: ${ultimo_prezzo}\nSize: ${size_ottimizzata}")
                     st.toast(f"🛒 Acquistato {coin} (${size_ottimizzata})", icon="🟢")
             
             if ha_posizione_reale:
@@ -322,7 +343,7 @@ for coin in tutti_i_soldati:
                 guadagno_pct = ((ultimo_prezzo - dati_pos["prezzo_acquisto"]) / dati_pos["prezzo_acquisto"]) * 100
                 stato = f"📦 {round(guadagno_pct, 2)}%"
                 
-                # --- LIVELLO 3: HARD STOP LOSS DI EMERGENZA ---
+                # Livello 3: Hard Stop Loss
                 if guadagno_pct <= -hard_stop_loss:
                     qty_rimanente = pos_reali.get(coin_clean, pos_reali.get(coin, {})).get("qty", 0)
                     if qty_rimanente > 0:
@@ -334,12 +355,12 @@ for coin in tutti_i_soldati:
                                 "Perf %": f"{round(guadagno_pct, 2)}% [HARD STOP]", "Gain ($)": bottino_dollari
                             })
                             salva_storico_persistente(st.session_state.storico_profitti)
-                            invia_notifica_telegram(f"🚨 HARD STOP LOSS ATTIVATO SU {coin}!\nPerformance: {round(guadagno_pct, 2)}%\nPerdita: ${bottino_dollari}")
+                            invia_notifica_telegram(f"🚨 HARD STOP LOSS SU {coin}!")
                             del st.session_state.scatola_nera[coin]
                             stato = "💥 Hard Stop"
                             continue
                 
-                # --- LIVELLO 2: SCALING OUT (VENDITA 50%) ---
+                # Livello 2: Take Profit Parziale (50%)
                 if guadagno_pct >= 1.5 and not dati_pos.get("venduto_parziale", False):
                     qty_totale = pos_reali.get(coin_clean, pos_reali.get(coin, {})).get("qty", 0)
                     if qty_totale > 0:
@@ -347,10 +368,17 @@ for coin in tutti_i_soldati:
                         if invia_ordine_market(coin, "sell", qty_da_vendere, True, alpaca_key, alpaca_secret):
                             st.session_state.scatola_nera[coin]["venduto_parziale"] = True
                             st.session_state.scatola_nera[coin]["break_even_attivo"] = True
-                            invia_notifica_telegram(f"✅ TAKE PROFIT PARZIALE (50%) su {coin}\nPerformance: +{round(guadagno_pct, 2)}%\n🛡️ Blindatura Break-Even attiva sulla quota restante.")
+                            capitale_parziale = dati_pos.get("size_effettiva", size_dollari) / 2
+                            bottino_parziale = round((capitale_parziale * (guadagno_pct / 100)), 2)
+                            st.session_state.storico_profitti.append({
+                                "Ora": datetime.now().strftime('%H:%M:%S'), "Asset": coin,
+                                "Perf %": f"+{round(guadagno_pct, 2)}% [TAKE PROFIT 50%]", "Gain ($)": bottino_parziale
+                            })
+                            salva_storico_persistente(st.session_state.storico_profitti)
+                            invia_notifica_telegram(f"✅ TP PARZIALE (50%) su {coin}")
                             st.toast(f"Venduto 50% di {coin}. Break-Even attivo!", icon="🛡️")
 
-                # --- LIVELLO 2.5: INTERVENTO PROTEZIONE BREAK-EVEN ---
+                # Livello 2.5: Protezione Break-Even
                 if dati_pos.get("break_even_attivo", False) and ultimo_prezzo <= dati_pos["prezzo_acquisto"]:
                     qty_rimanente = pos_reali.get(coin_clean, pos_reali.get(coin, {})).get("qty", 0)
                     if qty_rimanente > 0:
@@ -360,12 +388,12 @@ for coin in tutti_i_soldati:
                                 "Perf %": "0.0% [BREAK-EVEN]", "Gain ($)": 0.0
                             })
                             salva_storico_persistente(st.session_state.storico_profitti)
-                            invia_notifica_telegram(f"🛡️ PROTEZIONE BREAK-EVEN ATTIVATA SU {coin}!\nSeconda metà liquidata a rischio zero.")
+                            invia_notifica_telegram(f"🛡️ PROTEZIONE BREAK-EVEN SU {coin}!")
                             del st.session_state.scatola_nera[coin]
                             stato = "🛡️ Break-Even"
                             continue
 
-                # TRAILING STOP ATR DINAMICO STANDARD
+                # Trailing Stop ATR
                 stop_dinamico = dati_pos["prezzo_massimo"] - (2 * atr_attuale) if atr_attuale > 0 else dati_pos["prezzo_massimo"] * (1 - (trailing_distance/100))
                 
                 if ultimo_prezzo <= stop_dinamico:
@@ -373,13 +401,15 @@ for coin in tutti_i_soldati:
                     if qty_rimanente > 0:
                         if invia_ordine_market(coin, "sell", qty_rimanente, True, alpaca_key, alpaca_secret):
                             capitale_impiegato = dati_pos.get("size_effettiva", size_dollari)
+                            if dati_pos.get("venduto_parziale", False):
+                                capitale_impiegato = capitale_impiegato / 2
                             bottino_dollari = round((capitale_impiegato * (guadagno_pct / 100)), 2)
                             st.session_state.storico_profitti.append({
                                 "Ora": datetime.now().strftime('%H:%M:%S'), "Asset": coin,
-                                "Perf %": f"{round(guadagno_pct, 2)}%", "Gain ($)": bottino_dollari
+                                "Perf %": f"{round(guadagno_pct, 2)}% [TRAILING]", "Gain ($)": bottino_dollari
                             })
                             salva_storico_persistente(st.session_state.storico_profitti)
-                            invia_notifica_telegram(f"💥 CHIUSURA TRAILING ATR SU {coin}!\nPerformance Finale: {round(guadagno_pct, 2)}%\nProfitto: ${bottino_dollari}")
+                            invia_notifica_telegram(f"💥 CHIUSURA TRAILING ATR SU {coin}!")
                             del st.session_state.scatola_nera[coin]
                             stato = "💥 Chiuso ATR"
         elif ha_posizione_reale: 
@@ -388,7 +418,7 @@ for coin in tutti_i_soldati:
     trend_str = "🟢 Rialzista" if (ema200_attuale is None or ultimo_prezzo > ema200_attuale) else "🔴 Ribassista"
     tabella_finale_mappa[coin] = {"Prezzo": ultimo_prezzo, "RSI": rsi_attuale, "Trend (EMA200)": trend_str, "Size Dinamica ($)": round(size_ottimizzata, 2), "Stato": stato}
 
-# --- RENDERING PLANCE DI COMANDO DINGAMICHE ---
+# Rendering Plance di Comando Categorie
 for categoria, monete in EQUIPAGGIO.items():
     st.markdown(f"### {categoria}")
     righe_cat = []
@@ -432,16 +462,16 @@ if st.button("🛒 FORZA ACQUISTO MANUALE (Test)"):
             "venduto_parziale": False,
             "break_even_attivo": False
         }
-        invia_notifica_telegram(f"🚀 ORDINE MANUALE FORZATO DI TEST su {token_scelto} per ${size_t}!")
+        invia_notifica_telegram(f"🚀 ORDINE MANUALE FORZATO su {token_scelto}!")
         st.success(f"Inviato ordine globale per {token_scelto}.")
         time.sleep(0.5)
         st.rerun()
 
 if st.session_state.storico_profitti:
     st.markdown("---")
-    st.subheader("💰 Registro dei Bottini di Guerra Persistente")
+    st.subheader("📋 Registro Completo di Sessione (Storico Generale)")
     st.dataframe(pd.DataFrame(st.session_state.storico_profitti), use_container_width=True)
 
-st.caption(f"Fortezza Hyperdrive v42.2 online. Log Orario: {datetime.now().strftime('%H:%M:%S')}")
+st.caption(f"Fortezza Hyperdrive v43.0 online. Log Orario: {datetime.now().strftime('%H:%M:%S')}")
 time.sleep(10)
 st.rerun()
