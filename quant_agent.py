@@ -7,7 +7,7 @@ import os
 from datetime import datetime, timedelta, timezone
 
 # Configurazione iniziale della pagina
-st.set_page_config(page_title="Quant Agent Global v41.1", layout="wide")
+st.set_page_config(page_title="Quant Agent Global v41.2", layout="wide")
 
 CACHE_FILE = "storico_profitti_cache.json"
 CONFIG_FILE = "config_fortezza.json"
@@ -78,12 +78,12 @@ st.sidebar.subheader("🎛️ Pannello Armamenti")
 attiva_capitale = st.sidebar.toggle("🚀 ATTIVA TRADING AUTOMATICO", value=stato_precedente)
 salva_config_stato(attiva_capitale)
 
-# --- STRUTTURA MULTI-ASSET GLOBAL IMPERIUM ---
+# --- STRUTTURA MULTI-ASSET GLOBAL IMPERIUM (SOLO AGENTI UFFICIALI ALPACA) ---
 EQUIPAGGIO = {
-    "👑 I Re del Mercato (Crypto 24/7)": ["BTC/USD", "ETH/USD", "SOL/USD"],
-    "🇺🇸 I Giganti di Wall Street (Azioni)": ["AAPL", "TSLA", "NVDA", "AMZN", "MSFT"],
-    "📀 Metalli Preziosi (ETF Oro & Argento)": ["GLD", "SLV"],
-    "🌶️ Battaglione Meme (Crypto Botti)": ["DOGE/USD", "SHIB/USD", "PEPE/USD", "BONK/USD"]
+    "👑 Crypto Blue-Chips Ufficiali (24/7)": ["BTC/USD", "ETH/USD", "SOL/USD"],
+    "⚡ Crypto Negoziabili ad Alta Liquidità": ["LTC/USD", "BCH/USD", "LINK/USD", "UNI/USD"],
+    "🇺🇸 I Giganti di Wall Street (Azioni USA)": ["AAPL", "TSLA", "NVDA", "AMZN", "MSFT"],
+    "📀 Metalli Preziosi (ETF Safe Haven)": ["GLD", "SLV"]
 }
 
 tutti_i_soldati = [coin for cat in EQUIPAGGIO.values() for coin in cat]
@@ -151,7 +151,7 @@ def invia_ordine_market(simbolo, lato, quantita_o_dollari, is_qty, key, secret):
         return res.status_code == 200 or res.status_code == 201
     except: return False
 
-# --- SCANNER ASIMMETRICO AVANZATO CON INDICATORI AD ALTA DENSITÀ ---
+# --- SCANNER CORE BATCH OTTIMIZZATO PER FILTRI DI MERCATO ---
 def scarica_dati_globali_batch(key, secret):
     if not key or not secret: return {}
     headers = {"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret}
@@ -160,11 +160,10 @@ def scarica_dati_globali_batch(key, secret):
     crypto_assets = [s for s in tutti_i_soldati if "/USD" in s]
     stock_assets = [s for s in tutti_i_soldati if "/USD" not in s]
     
-    # Finestre ridotte per evitare saturazione di memoria + limit aumentato a 10000
     ora_inizio_crypto = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
     ora_inizio_stocks = (datetime.now(timezone.utc) - timedelta(days=4)).strftime("%Y-%m-%dT%H:%M:%SZ")
     
-    # 1. GENERATORE CORE CRYPTO
+    # 1. RETRIEVAL PER CRYPTO VALIDATE
     if crypto_assets:
         try:
             url_crypto = "https://data.alpaca.markets/v1beta3/crypto/us/bars"
@@ -188,7 +187,7 @@ def scarica_dati_globali_batch(key, secret):
         except:
             for s in crypto_assets: mappa_prezzi[s] = {"prezzo": "Errore Rete", "rsi": "--", "ema200": None, "atr": 0}
 
-    # 2. GENERATORE CORE WALL STREET & METALLI
+    # 2. RETRIEVAL PER TRADITIONAL MARKETS
     if stock_assets:
         try:
             url_stocks = "https://data.alpaca.markets/v2/stocks/bars"
@@ -214,15 +213,15 @@ def scarica_dati_globali_batch(key, secret):
             
     return mappa_prezzi
 
-# --- INTERFACCIA TERMINALE v41.1 ---
-st.markdown("## 🛰️ Quant Agent Global Terminal v41.1 • Hyperdrive Mode")
+# --- INTERFACCIA UTENTE TERMINALE ---
+st.markdown("## 🛰️ Quant Agent Global Terminal v41.2 • Verified Assets Only")
 
 if attiva_capitale:
-    st.error("🚨 **IMPERIO ARMATO ATTIVO**: Filtro EMA200 operativo, Adattatore Munizioni ATR inserito e Satellite Telegram connesso.")
+    st.error("🚨 **IMPERIO ARMATO ATTIVO**: Monitoraggio feed istituzionali e trading algoritmico in esecuzione.")
 else:
-    st.info("🛡️ **MODALITÀ VEDETTA IN SICUREZZA**: Simulatore e calcolo metriche attivi. Nessun ordine a mercato.")
+    st.info("🛡️ **MODALITÀ VEDETTA IN SICUREZZA**: Visualizzazione metriche attiva. Nessun ordine verrà inoltrato.")
 
-# Pulsanti di sicurezza
+# Pulsanti di sicurezza nel pannello laterale
 st.sidebar.markdown("---")
 st.sidebar.subheader("🚨 Protocollo Difesa")
 if st.sidebar.button("💥 PANIC BUTTON MANUALE"):
@@ -244,7 +243,7 @@ if st.sidebar.button("🔄 Reset Dati Sessione"):
     time.sleep(0.5)
     st.rerun()
 
-# Raccolta Metriche Conto
+# Recupero Informazioni Economiche
 info_conto = ottieni_bilancio_conto(alpaca_key, alpaca_secret)
 pos_reali = ottieni_posizioni_reali(alpaca_key, alpaca_secret)
 totale_guadagnato = sum([t["Gain ($)"] for t in st.session_state.storico_profitti])
@@ -252,9 +251,9 @@ totale_guadagnato = sum([t["Gain ($)"] for t in st.session_state.storico_profitt
 c1, c2, c3 = st.columns(3)
 with c1: st.metric("💰 Cash Disponibile", f"$ {info_conto['cash']}")
 with c2: st.metric("🛡️ Capitale Corazzata", f"$ {info_conto['portfolio_value']}")
-with c3: st.metric("💵 CASSA PROFITTI GLOBAL", f"$ {round(totale_guadagnato, 2)}", delta="Filtro Trend + Volatilità Inseriti")
+with c3: st.metric("💵 CASSA PROFITTI GLOBAL", f"$ {round(totale_guadagnato, 2)}", delta="Asset Verificati Connessi")
 
-# Esecuzione Scansioni
+# Lancio scansioni cicliche
 dati_mercato_freschi = scarica_dati_globali_batch(alpaca_key, alpaca_secret)
 
 tabella_finale_mappa = {}
@@ -335,7 +334,7 @@ for coin in tutti_i_soldati:
     trend_str = "🟢 Rialzista" if (ema200_attuale is None or ultimo_prezzo > ema200_attuale) else "🔴 Ribassista"
     tabella_finale_mappa[coin] = {"Prezzo": ultimo_prezzo, "RSI": rsi_attuale, "Trend (EMA200)": trend_str, "Size Dinamica ($)": round(size_ottimizzata, 2), "Stato": stato}
 
-# --- RENDERING PLANCE DI COMANDO CATEGORIZZATE ---
+# --- RENDERING PLANCE DI COMANDO PULITE ---
 for categoria, monete in EQUIPAGGIO.items():
     st.markdown(f"### {categoria}")
     righe_cat = []
@@ -343,14 +342,9 @@ for categoria, monete in EQUIPAGGIO.items():
         d = tabella_finale_mappa.get(coin, {"Prezzo": "--", "RSI": "--", "Trend (EMA200)": "--", "Size Dinamica ($)": "--", "Stato": "--"})
         p_val = d["Prezzo"]
         
-        # Formattazione dinamica ad alta precisione per meme-coin micro-centesimali
         if isinstance(p_val, (int, float)):
-            if p_val < 0.01:
-                p_str = f"$ {p_val:,.8f}"
-            elif p_val < 1:
-                p_str = f"$ {p_val:,.4f}"
-            else:
-                p_str = f"$ {p_val:,.2f}"
+            if p_val < 1: p_str = f"$ {p_val:,.4f}"
+            else: p_str = f"$ {p_val:,.2f}"
         else: 
             p_str = str(p_val)
             
@@ -381,6 +375,6 @@ if st.session_state.storico_profitti:
     st.subheader("💰 Registro dei Bottini di Guerra Persistente")
     st.dataframe(pd.DataFrame(st.session_state.storico_profitti), use_container_width=True)
 
-st.caption(f"Fortezza Hyperdrive v41.1 online. Log Orario: {datetime.now().strftime('%H:%M:%S')}")
+st.caption(f"Fortezza Hyperdrive v41.2 online. Log Orario: {datetime.now().strftime('%H:%M:%S')}")
 time.sleep(10)
 st.rerun()
