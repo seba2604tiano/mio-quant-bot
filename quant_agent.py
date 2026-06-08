@@ -7,7 +7,7 @@ import os
 from datetime import datetime, timedelta, timezone
 
 # Configurazione iniziale della pagina
-st.set_page_config(page_title="Quant Agent Fast v39.2", layout="wide")
+st.set_page_config(page_title="Quant Agent Global v40.0", layout="wide")
 
 CACHE_FILE = "storico_profitti_cache.json"
 CONFIG_FILE = "config_fortezza.json"
@@ -46,8 +46,6 @@ if trading_mode == "Live (Reale)":
 else: 
     BASE_URL = "https://paper-api.alpaca.markets"
 
-DATA_URL = "https://data.alpaca.markets/v1beta3/crypto/us/bars"
-
 st.sidebar.markdown("---")
 st.sidebar.subheader("💰 Gestione Munizioni")
 size_dollari = st.sidebar.slider("Capitale per Singolo Trade ($)", min_value=5, max_value=500, value=50, step=5)
@@ -63,16 +61,15 @@ tipo_strategia = st.sidebar.selectbox("Condizione d'Acquisto", ["Ipervenduto Cla
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("🎛️ Pannello Armamenti")
-# Interruttore Toggle Aeronautico Persistente
 attiva_capitale = st.sidebar.toggle("🚀 ATTIVA TRADING AUTOMATICO", value=stato_precedente)
 salva_config_stato(attiva_capitale)
 
-# Asset stabili certificati Alpaca
+# --- NUOVA STRUTTURA MULTI-ASSET GLOBAL IMPERIUM ---
 EQUIPAGGIO = {
-    "👑 I Re del Mercato": ["BTC/USD", "ETH/USD", "SOL/USD"],
-    "⚡ I Pilastri Altcoin": ["AVAX/USD", "LINK/USD", "DOT/USD", "LTC/USD", "XRP/USD", "BCH/USD"],
-    "🌶️ Battaglione Meme (Botti Notturni)": ["DOGE/USD", "SHIB/USD", "PEPE/USD", "WIF/USD", "BONK/USD"],
-    "🔮 DeFi & Web3 Leader": ["UNI/USD", "AAVE/USD", "GRT/USD", "LDO/USD"]
+    "👑 I Re del Mercato (Crypto 24/7)": ["BTC/USD", "ETH/USD", "SOL/USD"],
+    "🇺🇸 I Giganti di Wall Street (Azioni)": ["AAPL", "TSLA", "NVDA", "AMZN", "MSFT"],
+    "📀 Metalli Preziosi (ETF Oro & Argento)": ["GLD", "SLV"],
+    "🌶️ Battaglione Meme (Crypto Botti)": ["DOGE/USD", "SHIB/USD", "PEPE/USD", "BONK/USD"]
 }
 
 tutti_i_soldati = [coin for cat in EQUIPAGGIO.values() for coin in cat]
@@ -80,27 +77,20 @@ tutti_i_soldati = [coin for cat in EQUIPAGGIO.values() for coin in cat]
 def carica_storico_persistente():
     if os.path.exists(CACHE_FILE):
         try:
-            with open(CACHE_FILE, "r") as f: 
-                return json.load(f)
-        except: 
-            return []
+            with open(CACHE_FILE, "r") as f: return json.load(f)
+        except: return []
     return []
 
 def salva_storico_persistente(storico):
     try:
-        with open(CACHE_FILE, "w") as f: 
-            json.dump(storico, f)
-    except: 
-        pass
+        with open(CACHE_FILE, "w") as f: json.dump(storico, f)
+    except: pass
 
-if "scatola_nera" not in st.session_state: 
-    st.session_state.scatola_nera = {}
-if "storico_profitti" not in st.session_state: 
-    st.session_state.storico_profitti = carica_storico_persistente()
+if "scatola_nera" not in st.session_state: st.session_state.scatola_nera = {}
+if "storico_profitti" not in st.session_state: st.session_state.storico_profitti = carica_storico_persistente()
 
 def calcola_rsi(prezzi, periodi=14):
-    if len(prezzi) < periodi + 1: 
-        return 50.0
+    if len(prezzi) < periodi + 1: return 50.0
     variazioni = pd.Series(prezzi).diff()
     guadagni = variazioni.clip(lower=0)
     perdite = -variazioni.clip(upper=0)
@@ -116,8 +106,7 @@ def ottieni_posizioni_reali(key, secret):
         res = requests.get(url, headers=headers)
         if res.status_code == 200:
             return {p["symbol"]: {"qty": float(p["qty"]), "asset_id": p["asset_id"]} for p in res.json()}
-    except: 
-        pass
+    except: pass
     return {}
 
 def ottieni_bilancio_conto(key, secret):
@@ -128,8 +117,7 @@ def ottieni_bilancio_conto(key, secret):
         if res.status_code == 200:
             dati = res.json()
             return {"cash": round(float(dati["cash"]), 2), "portfolio_value": round(float(dati["portfolio_value"]), 2)}
-    except: 
-        pass
+    except: pass
     return {"cash": "0.0", "portfolio_value": "0.0"}
 
 def invia_ordine_market(simbolo, lato, quantita_o_dollari, is_qty, key, secret):
@@ -143,49 +131,68 @@ def invia_ordine_market(simbolo, lato, quantita_o_dollari, is_qty, key, secret):
     try:
         res = requests.post(url_ordine, json=payload, headers=headers)
         return res.status_code == 200 or res.status_code == 201
-    except: 
-        return False
+    except: return False
 
+# --- ARCHITETTURA DI SCANSIONE DUALE MULTI-ASSET BATCH ---
 def scarica_dati_globali_batch(key, secret):
-    if not key or not secret: 
-        return {}
+    if not key or not secret: return {}
     headers = {"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret}
-    simboli_cumulati = ",".join(tutti_i_soldati)
-    
-    ora_inizio = (datetime.now(timezone.utc) - timedelta(hours=6)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    params = {"symbols": simboli_cumulati, "timeframe": "2Min", "limit": 5000, "start": ora_inizio}
-    
     mappa_prezzi = {}
-    try:
-        risposta = requests.get(DATA_URL, headers=headers, params=params)
-        if risposta.status_code == 200:
-            dati_totali = risposta.json().get("bars", {})
-            for s in tutti_i_soldati:
-                s_clean = s.replace("/", "")
-                barre = dati_totali.get(s, dati_totali.get(s_clean, []))
-                if barre:
-                    prezzi_chiusura = [b["c"] for b in barre]
-                    mappa_prezzi[s] = {"prezzo": prezzi_chiusura[-1], "rsi": calcola_rsi(prezzi_chiusura)}
-                else:
-                    mappa_prezzi[s] = {"prezzo": "No Feed", "rsi": "--"}
-        else:
-            for s in tutti_i_soldati: 
-                mappa_prezzi[s] = {"prezzo": "Rate Limit", "rsi": "--"}
-    except:
-        for s in tutti_i_soldati: 
-            mappa_prezzi[s] = {"prezzo": "Errore Rete", "rsi": "--"}
+    
+    # Divisione asset per canali differenti
+    crypto_assets = [s for s in tutti_i_soldati if "/USD" in s]
+    stock_assets = [s for s in tutti_i_soldati if "/USD" not in s]
+    
+    # Finestra temporale di 5 giorni per superare i weekend di Wall Street
+    ora_inizio = (datetime.now(timezone.utc) - timedelta(days=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    
+    # 1. CANALE DATA CRYPTO
+    if crypto_assets:
+        try:
+            url_crypto = "https://data.alpaca.markets/v1beta3/crypto/us/bars"
+            res = requests.get(url_crypto, headers=headers, params={"symbols": ",".join(crypto_assets), "timeframe": "5Min", "limit": 2000, "start": ora_inizio})
+            if res.status_code == 200:
+                dati_c = res.json().get("bars", {})
+                for s in crypto_assets:
+                    barre = dati_c.get(s, dati_c.get(s.replace("/", ""), []))
+                    if barre:
+                        chiusure = [b["c"] for b in barre]
+                        mappa_prezzi[s] = {"prezzo": chiusure[-1], "rsi": calcola_rsi(chiusure)}
+                    else: mappa_prezzi[s] = {"prezzo": "No Feed", "rsi": "--"}
+            else:
+                for s in crypto_assets: mappa_prezzi[s] = {"prezzo": f"Err {res.status_code}", "rsi": "--"}
+        except:
+            for s in crypto_assets: mappa_prezzi[s] = {"prezzo": "Errore Rete", "rsi": "--"}
+
+    # 2. CANALE DATA WALL STREET & METALLI (STOCKS)
+    if stock_assets:
+        try:
+            url_stocks = "https://data.alpaca.markets/v2/stocks/bars"
+            res = requests.get(url_stocks, headers=headers, params={"symbols": ",".join(stock_assets), "timeframe": "5Min", "limit": 2000, "start": ora_inizio})
+            if res.status_code == 200:
+                dati_s = res.json().get("bars", {})
+                for s in stock_assets:
+                    barre = dati_s.get(s, [])
+                    if barre:
+                        chiusure = [b["c"] for b in barre]
+                        mappa_prezzi[s] = {"prezzo": chiusure[-1], "rsi": calcola_rsi(chiusure)}
+                    else: mappa_prezzi[s] = {"prezzo": "Chiuso/NoFeed", "rsi": "--"}
+            else:
+                for s in stock_assets: mappa_prezzi[s] = {"prezzo": f"Err {res.status_code}", "rsi": "--"}
+        except:
+            for s in stock_assets: mappa_prezzi[s] = {"prezzo": "Errore Rete", "rsi": "--"}
+            
     return mappa_prezzi
 
-# --- RENDERING INTERFACCIA GRAFICA ---
-st.markdown("## 🛰️ Quant Agent High-Speed Terminal v39.2")
+# --- INTERFACCIA TERMINALE v40.0 ---
+st.markdown("## 🛰️ Quant Agent Global Terminal v40.0")
 
-# INIEZIONE SICURA BANNER CENTRALI
 if attiva_capitale:
-    st.error("🚨 **SISTEMA DI FUOCO ARMATO**: Il Trading Automatico è ATTIVO. Il bot aprirà e chiuderà posizioni autonomamente in tempo reale secondo la strategia impostata.")
+    st.error("🚨 **IMPERIO ARMATO ATTIVO**: Il bot sta cacciando su Criptovalute, Wall Street ed ETF Metalli in contemporanea.")
 else:
-    st.info("🛡️ **MODALITÀ VEDETTA IN SICUREZZA**: L'Automazione è SPENTA. Il bot scansiona i mercati e aggiorna i dati grafici, ma NON invierà alcun ordine ad Alpaca.")
+    st.info("🛡️ **MODALITÀ VEDETTA IN SICUREZZA**: Schermate di analisi attive. Nessun ordine verrà inviato a mercato.")
 
-# Barra Laterale: Pulsanti di Emergenza e Manutenzione
+# Pulsanti di sicurezza laterali
 st.sidebar.markdown("---")
 st.sidebar.subheader("🚨 Protocollo Difesa")
 if st.sidebar.button("💥 PANIC BUTTON MANUALE"):
@@ -193,38 +200,32 @@ if st.sidebar.button("💥 PANIC BUTTON MANUALE"):
     for simbolo_clean, dati in posizioni_attuali.items():
         invia_ordine_market(simbolo_clean, "sell", dati["qty"], True, alpaca_key, alpaca_secret)
     st.session_state.scatola_nera = {}
-    st.toast("Portafoglio interamente liquidato!", icon="🔥")
+    st.toast("Impero interamente liquidato!", icon="🔥")
     time.sleep(0.5)
     st.rerun()
 
 if st.sidebar.button("🔄 Reset Dati Sessione"):
     st.session_state.scatola_nera = {}
     st.session_state.storico_profitti = []
-    if os.path.exists(CACHE_FILE): 
-        os.remove(CACHE_FILE)
-    if os.path.exists(CONFIG_FILE): 
-        os.remove(CONFIG_FILE)
-    st.toast("Tabula Rasa effettuata!", icon="🧼")
+    if os.path.exists(CACHE_FILE): os.remove(CACHE_FILE)
+    if os.path.exists(CONFIG_FILE): os.remove(CONFIG_FILE)
+    st.toast("Tabula Rasa Effettuata!", icon="🧼")
     time.sleep(0.5)
     st.rerun()
 
-# Recupero Metriche Finanziarie Real-Time
+# Raccolta Metriche
 info_conto = ottieni_bilancio_conto(alpaca_key, alpaca_secret)
 pos_reali = ottieni_posizioni_reali(alpaca_key, alpaca_secret)
 totale_guadagnato = sum([t["Gain ($)"] for t in st.session_state.storico_profitti])
 
 c1, c2, c3 = st.columns(3)
-with c1: 
-    st.metric("💰 Cash Disponibile", f"$ {info_conto['cash']}")
-with c2: 
-    st.metric("🛡️ Capitale Corazzata", f"$ {info_conto['portfolio_value']}")
-with c3: 
-    st.metric("💵 CASSA PROFITTI SESSIONE", f"$ {round(totale_guadagnato, 2)}", delta="Iniezione Completa Verificata")
+with c1: st.metric("💰 Cash Disponibile", f"$ {info_conto['cash']}")
+with c2: st.metric("🛡️ Capitale Corazzata", f"$ {info_conto['portfolio_value']}")
+with c3: st.metric("💵 CASSA PROFITTI GLOBAL", f"$ {round(totale_guadagnato, 2)}", delta="Multi-Asset Unificato")
 
-# Esecui Scansione ad Alta Velocità Anti-Tappo
+# Download Dati Dual-Core
 dati_mercato_freschi = scarica_dati_globali_batch(alpaca_key, alpaca_secret)
 
-# Motore di Calcolo delle Condizioni Algoritmiche
 tabella_finale_mappa = {}
 for coin in tutti_i_soldati:
     coin_clean = coin.replace("/", "")
@@ -281,13 +282,12 @@ for coin in tutti_i_soldati:
 
     tabella_finale_mappa[coin] = {"Prezzo": ultimo_prezzo, "RSI": rsi_attuale, "Stato": stato}
 
-# --- GENERAZIONE GRID COMPATIBILI CON PYARROW ---
+# --- RENDERING DEI BLOCCHI EDITATI ---
 for categoria, monete in EQUIPAGGIO.items():
     st.markdown(f"### {categoria}")
     righe_cat = []
     for coin in monete:
         d = tabella_finale_mappa.get(coin, {"Prezzo": "--", "RSI": "--", "Stato": "--"})
-        
         p_val = d["Prezzo"]
         if isinstance(p_val, (int, float)):
             p_str = f"$ {p_val:,.4f}" if p_val < 1 else f"$ {p_val:,.2f}"
@@ -298,36 +298,27 @@ for categoria, monete in EQUIPAGGIO.items():
         rsi_str = f"{rsi_val:.2f}" if isinstance(rsi_val, (int, float)) else str(rsi_val)
         
         righe_cat.append({
-            "Asset": coin, 
-            "Prezzo Attuale": p_str, 
-            "RSI (2 Min)": rsi_str, 
-            "Stato Operativo / Profitto": str(d["Stato"])
+            "Asset": coin, "Prezzo Attuale": p_str, "RSI (5 Min)": rsi_str, "Stato Operativo": str(d["Stato"])
         })
     st.dataframe(pd.DataFrame(righe_cat), use_container_width=True, hide_index=True)
 
-# Blocco di Forzatura Manuale per Sandbox Test
+# Console Test manuale
 st.markdown("---")
-st.subheader("🛠️ Console di Controllo Manuale (Stress-Test Sandbox)")
+st.subheader("🛠️ Console di Controllo Manuale Global")
 token_scelto = st.selectbox("Seleziona Asset da Forzare", tutti_i_soldati)
 if st.button("🛒 FORZA ACQUISTO MANUALE (Test)"):
     if invia_ordine_market(token_scelto, "buy", size_dollari, False, alpaca_key, alpaca_secret):
         prezzo_m = tabella_finale_mappa.get(token_scelto, {"Prezzo": 1})["Prezzo"]
         st.session_state.scatola_nera[token_scelto] = {"prezzo_acquisto": prezzo_m if isinstance(prezzo_m, (int, float)) else 1, "prezzo_massimo": prezzo_m if isinstance(prezzo_m, (int, float)) else 1, "piramidato": False}
-        st.success(f"Inviato ordine d'acquisto forzato per {token_scelto}.")
+        st.success(f"Inviato ordine globale per {token_scelto}.")
         time.sleep(0.5)
         st.rerun()
 
-# Tabelle Log Storici Sessione
 if st.session_state.storico_profitti:
     st.markdown("---")
     st.subheader("💰 Registro dei Bottini di Guerra Persistente")
     st.dataframe(pd.DataFrame(st.session_state.storico_profitti), use_container_width=True)
 
-if st.session_state.scatola_nera:
-    st.markdown("---")
-    st.subheader("📊 Inseguimento Scatola Nera Attiva")
-    st.dataframe(pd.DataFrame(st.session_state.scatola_nera).T, use_container_width=True)
-
-st.caption(f"Fortezza v39.2 sbloccata. Orario: {datetime.now().strftime('%H:%M:%S')}")
+st.caption(f"Fortezza Unificata v40.0 attiva. Log Orario: {datetime.now().strftime('%H:%M:%S')}")
 time.sleep(10)
 st.rerun()
