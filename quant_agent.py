@@ -7,7 +7,7 @@ import os
 from datetime import datetime, timedelta, timezone
 
 # Configurazione iniziale della pagina
-st.set_page_config(page_title="Quant Agent Global v43.0", layout="wide")
+st.set_page_config(page_title="Quant Agent Global v43.2", layout="wide")
 
 CACHE_FILE = "storico_profitti_cache.json"
 CONFIG_FILE = "config_fortezza.json"
@@ -78,9 +78,9 @@ st.sidebar.subheader("🎛️ Pannello Armamenti")
 attiva_capitale = st.sidebar.toggle("🚀 ATTIVA TRADING AUTOMATICO", value=stato_precedente)
 salva_config_stato(attiva_capitale)
 
-# --- STRUTTURA MULTI-ASSET GLOBAL v43.0 (FILTRATA ED ESPANSA) ---
+# --- STRUTTURA MULTI-ASSET GLOBAL v43.2 (I 20 GIGANTI + CRYPTO & ETF) ---
 EQUIPAGGIO = {
-    "👑 Crypto Blue-Chips Ufficiali (24/7)": ["BTC/USD", "ETH/USD"],
+    "👑 Crypto Blue-Chips Ufficiali (24/7)": ["BTC/USD", "ETH/USD", "SOL/USD"],
     "🇺🇸 I Giganti di Wall Street (Azioni USA)": [
         "AAPL", "TSLA", "NVDA", "AMZN", "MSFT", "GOOGL", "META", "NFLX", "AMD", "PLTR",
         "SMCI", "MU", "AVGO", "COIN", "LLY", "JPM", "XOM", "COST", "DIS", "NKE"
@@ -189,7 +189,14 @@ def scarica_dati_globali_batch(key, secret):
     if stock_assets:
         try:
             url_stocks = "https://data.alpaca.markets/v2/stocks/bars"
-            res = requests.get(url_stocks, headers=headers, params={"symbols": ",".join(stock_assets), "timeframe": "5Min", "limit": 10000, "start": ora_inizio_stocks})
+            # 🔥 FEED IEX ATTIVO: Forza Alpaca a caricare lo storico completo per tutti i 20 titoli
+            res = requests.get(url_stocks, headers=headers, params={
+                "symbols": ",".join(stock_assets), 
+                "timeframe": "5Min", 
+                "limit": 10000, 
+                "start": ora_inizio_stocks,
+                "feed": "iex"
+            })
             if res.status_code == 200:
                 dati_s = res.json().get("bars", {})
                 for s in stock_assets:
@@ -201,16 +208,16 @@ def scarica_dati_globali_batch(key, secret):
                         tr = pd.concat([high - low, (high - close_prev).abs(), (low - close_prev).abs()], axis=1).max(axis=1)
                         atr_val = tr.rolling(14).mean().iloc[-1] if len(tr) >= 14 else 0
                         mappa_prezzi[s] = {"prezzo": chiusure[-1], "rsi": calcola_rsi(chiusure), "ema200": calcola_ema200(chiusure), "atr": atr_val}
-                    else: mappa_prezzi[s] = {"prezzo": "Fuori Sessione", "rsi": "--", "ema200": None, "atr": 0}
+                    else: mappa_prezzi[s] = {"prezzo": "No Liquidity", "rsi": "--", "ema200": None, "atr": 0}
             else:
-                for s in stock_assets: mappa_prezzi[s] = {"prezzo": "Attesa Open", "rsi": "--", "ema200": None, "atr": 0}
+                for s in stock_assets: mappa_prezzi[s] = {"prezzo": "Errore Server", "rsi": "--", "ema200": None, "atr": 0}
         except:
             for s in stock_assets: mappa_prezzi[s] = {"prezzo": "Errore Rete", "rsi": "--", "ema200": None, "atr": 0}
             
     return mappa_prezzi
 
 # --- INTERFACCIA UTENTE ---
-st.markdown("## 🛰️ Quant Agent Global Terminal v43.0 • Imperium Maxima")
+st.markdown("## 🛰️ Quant Agent Global Terminal v43.2 • Imperium Maxima")
 
 if attiva_capitale:
     st.error("🚨 **IMPERIO ARMATO ATTIVO**: Monitoraggio feed istituzionali e protezione acquisti multilivello in esecuzione.")
@@ -249,7 +256,7 @@ with c1: st.metric("💰 Cash Disponibile", f"$ {info_conto['cash']}")
 with c2: st.metric("🛡️ Capitale Corazzata", f"$ {info_conto['portfolio_value']}")
 with c3: st.metric("💵 CASSA PROFITTI GLOBAL", f"$ {round(totale_guadagnato, 2)}", delta="Sincronizzazione 3-Tier Attiva")
 
-# --- 🏆 NUOVO BLOCCO: BACHECA DELLA GIOIA TATTICA ---
+# --- 🏆 BACHECA DELLA GIOIA TATTICA ---
 st.markdown("---")
 vincenti = sum(1 for t in st.session_state.storico_profitti if float(t.get("Gain ($)", 0.0)) > 0)
 pareggi = sum(1 for t in st.session_state.storico_profitti if "[BREAK-EVEN]" in str(t.get("Perf %", "")))
@@ -472,6 +479,6 @@ if st.session_state.storico_profitti:
     st.subheader("📋 Registro Completo di Sessione (Storico Generale)")
     st.dataframe(pd.DataFrame(st.session_state.storico_profitti), use_container_width=True)
 
-st.caption(f"Fortezza Hyperdrive v43.0 online. Log Orario: {datetime.now().strftime('%H:%M:%S')}")
+st.caption(f"Fortezza Hyperdrive v43.2 online. Log Orario: {datetime.now().strftime('%H:%M:%S')}")
 time.sleep(10)
 st.rerun()
