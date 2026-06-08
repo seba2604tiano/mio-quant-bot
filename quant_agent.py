@@ -34,8 +34,7 @@ LOOKBACK_DAYS = 14
 ATR_MULTIPLIER = 1.5
 
 # Lista Asset Unificata (Crypto, Azioni, ETF)
-
-    ASSET_UNIVERSE = [
+ASSET_UNIVERSE = [
     # 🌟 CRIPTOVALUTE (Attive 24/7)
     "BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "XRP-USD", "ADA-USD", "LINK-USD",
     
@@ -48,7 +47,6 @@ ATR_MULTIPLIER = 1.5
     # 🛡️ ETF & MATERIE PRIME (Coperture macro)
     "SPY", "QQQ", "IWM", "DIA", "GLD", "SLV", "USO", "SMH", "ARKK"
 ]
-
 
 # Mapping per Alpaca (Rimuove il trattino per le crypto in esecuzione reale)
 def clean_ticker_for_alpaca(ticker):
