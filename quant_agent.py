@@ -37,7 +37,7 @@ stato_precedente = carica_config_stato()
 
 # Barra laterale per le configurazioni e le chiavi
 st.sidebar.header("🔑 Configurazione API Alpaca")
-alpaca_key = st.sidebar.text_input("Alpaca API Key ID", value=chave_fissa_id, type="password")
+alpaca_key = st.sidebar.text_input("Alpaca API Key ID", value=chiave_fissa_id, type="password")
 alpaca_secret = st.sidebar.text_input("Alpaca API Secret Key", value=chiave_fissa_secret, type="password")
 trading_mode = st.sidebar.radio("Modalità Trading", ["Paper (Simulazione)", "Live (Reale)"])
 
@@ -269,6 +269,7 @@ for coin in tutti_i_soldati:
     ema200_attuale = dati_c["ema200"]
     atr_attuale = dati_c["atr"]
     stato = "🛰️ In Caccia"
+    size_ottimizzata = size_dollari
     
     if isinstance(ultimo_prezzo, (int, float)):
         ha_posizione = coin_clean in pos_reali or coin in pos_reali
