@@ -148,14 +148,14 @@ def invia_ordine_market(simbolo, lato, quantita_o_dollari, is_qty, key, secret):
     except: 
         return False
 
-# --- FUNZIONE SCANSIONE SUPER-FAST BATCH CORRETTA (SBLOCCATA A 2000 LIMIT) ---
+# --- FUNZIONE SCANSIONE BATCH INTEGRATA (LIMIT A 2000) ---
 def scarica_dati_globali_batch(key, secret):
     if not key or not secret: 
         return {}
     headers = {"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret}
     simboli_cumulati = ",".join(tutti_i_soldati)
     
-    # LIMIT PORTATO A 2000: Così c'è spazio per le candele di tutte le monete della lista!
+    # Richiesta massiva a 2000 per dare spazio a tutte le monete
     params = {"symbols": simboli_cumulati, "timeframe": "2Min", "limit": 2000}
     
     mappa_prezzi = {}
@@ -217,7 +217,7 @@ with c2:
 with c3: 
     st.metric("💵 CASSA PROFITTI SESSIONE", f"$ {round(totale_guadagnato, 2)}", delta="Ottimizzazione Batch Attiva")
 
-# Esegui l'unica chiamata internet sbloccata per tutti i prezzi
+# Esegui la chiamata batch
 dati_mercato_freschi = scarica_dati_globali_batch(alpaca_key, alpaca_secret)
 
 # Elaborazione trading ed esposizione tabelle
@@ -277,16 +277,32 @@ for coin in tutti_i_soldati:
 
     tabella_finale_mappa[coin] = {"Prezzo": ultimo_prezzo, "RSI": rsi_attuale, "Stato": stato}
 
-# Rendering delle griglie visive velocizzate
+# --- RENDERING CORRETTO ANTI-CRASH PER PYARROW (CONVERSIONE STRINGHE) ---
 for categoria, monete in EQUIPAGGIO.items():
     st.markdown(f"### {categoria}")
     righe_cat = []
     for coin in monete:
         d = tabella_finale_mappa.get(coin, {"Prezzo": "--", "RSI": "--", "Stato": "--"})
-        righe_cat.append({"Asset": coin, "Prezzo Attuale": d["Prezzo"], "RSI (2 Min)": d["RSI"], "Stato Operativo / Profitto": d["Stato"]})
+        
+        # Sforziamo i tipi numerici in stringhe formattate per blindare PyArrow
+        p_val = d["Prezzo"]
+        if isinstance(p_val, (int, float)):
+            p_str = f"$ {p_val:,.4f}" if p_val < 1 else f"$ {p_val:,.2f}"
+        else:
+            p_str = str(p_val)
+            
+        rsi_val = d["RSI"]
+        rsi_str = f"{rsi_val:.2f}" if isinstance(rsi_val, (int, float)) else str(rsi_val)
+        
+        righe_cat.append({
+            "Asset": coin, 
+            "Prezzo Attuale": p_str, 
+            "RSI (2 Min)": rsi_str, 
+            "Stato Operativo / Profitto": str(d["Stato"])
+        })
     st.dataframe(pd.DataFrame(righe_cat), use_container_width=True, hide_index=True)
 
-# Console di stress-test manuale aggiornata
+# Console di stress-test manuale
 st.markdown("---")
 st.subheader("🛠️ Console di Controllo Manuale (Stress-Test Sandbox)")
 token_scelto = st.selectbox("Seleziona Asset da Forzare", tutti_i_soldati)
