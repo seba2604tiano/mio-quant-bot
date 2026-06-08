@@ -4,10 +4,10 @@ import requests
 import time
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 # Configurazione iniziale della pagina
-st.set_page_config(page_title="Quant Agent Fast v38.9", layout="wide")
+st.set_page_config(page_title="Quant Agent Fast v39.0", layout="wide")
 
 CACHE_FILE = "storico_profitti_cache.json"
 CONFIG_FILE = "config_fortezza.json"
@@ -62,7 +62,6 @@ st.sidebar.subheader("🏹 Strategia d'Ingresso")
 tipo_strategia = st.sidebar.selectbox("Condizione d'Acquisto", ["Ipervenduto Classico (RSI < 35)", "Inseguimento FOMO (RSI > 65)"])
 
 st.sidebar.markdown("---")
-# Il flag ora ricorda lo stato anche se spegni il PC o fai il refresh
 attiva_capitale = st.sidebar.checkbox("🚀 Attiva Trading Automatico", value=stato_precedente)
 salva_config_stato(attiva_capitale)
 
@@ -148,15 +147,16 @@ def invia_ordine_market(simbolo, lato, quantita_o_dollari, is_qty, key, secret):
     except: 
         return False
 
-# --- FUNZIONE SCANSIONE BATCH INTEGRATA (LIMIT A 2000) ---
+# --- FUNZIONE SCANSIONE BATCH TEMPORIZZATA ANTI-TAPPO ---
 def scarica_dati_globali_batch(key, secret):
     if not key or not secret: 
         return {}
     headers = {"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret}
     simboli_cumulati = ",".join(tutti_i_soldati)
     
-    # Richiesta massiva a 2000 per dare spazio a tutte le monete
-    params = {"symbols": simboli_cumulati, "timeframe": "2Min", "limit": 2000}
+    # FIX FINESTRA TEMPORALE: Chiediamo solo le ultime 6 ore per evitare accumuli e sbloccare le lettere S-Z
+    ora_inizio = (datetime.now(timezone.utc) - timedelta(hours=6)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    params = {"symbols": simboli_cumulati, "timeframe": "2Min", "limit": 5000, "start": ora_inizio}
     
     mappa_prezzi = {}
     try:
@@ -180,7 +180,7 @@ def scarica_dati_globali_batch(key, secret):
     return mappa_prezzi
 
 # --- GRAFICA TERMINALE OPERATIVO ---
-st.markdown("## 🛰️ Quant Agent High-Speed Terminal v38.9 — MEGA-BATCH DATA FEED")
+st.markdown("## 🛰️ Quant Agent High-Speed Terminal v39.0 — ULTRA-BATCH ANTI-TAPPO")
 
 # Controlli Sidebar
 st.sidebar.markdown("---")
@@ -215,9 +215,9 @@ with c1:
 with c2: 
     st.metric("🛡️ Capitale Corazzata", f"$ {info_conto['portfolio_value']}")
 with c3: 
-    st.metric("💵 CASSA PROFITTI SESSIONE", f"$ {round(totale_guadagnato, 2)}", delta="Ottimizzazione Batch Attiva")
+    st.metric("💵 CASSA PROFITTI SESSIONE", f"$ {round(totale_guadagnato, 2)}", delta="Ottimizzazione Batch Totale")
 
-# Esegui la chiamata batch
+# Esegui la chiamata batch protetta
 dati_mercato_freschi = scarica_dati_globali_batch(alpaca_key, alpaca_secret)
 
 # Elaborazione trading ed esposizione tabelle
@@ -277,14 +277,13 @@ for coin in tutti_i_soldati:
 
     tabella_finale_mappa[coin] = {"Prezzo": ultimo_prezzo, "RSI": rsi_attuale, "Stato": stato}
 
-# --- RENDERING CORRETTO ANTI-CRASH PER PYARROW (CONVERSIONE STRINGHE) ---
+# --- RENDERING PYARROW COMPATIBLE ---
 for categoria, monete in EQUIPAGGIO.items():
     st.markdown(f"### {categoria}")
     righe_cat = []
     for coin in monete:
         d = tabella_finale_mappa.get(coin, {"Prezzo": "--", "RSI": "--", "Stato": "--"})
         
-        # Sforziamo i tipi numerici in stringhe formattate per blindare PyArrow
         p_val = d["Prezzo"]
         if isinstance(p_val, (int, float)):
             p_str = f"$ {p_val:,.4f}" if p_val < 1 else f"$ {p_val:,.2f}"
@@ -324,6 +323,6 @@ if st.session_state.scatola_nera:
     st.subheader("📊 Inseguimento Scatola Nera Attiva")
     st.dataframe(pd.DataFrame(st.session_state.scatola_nera).T, use_container_width=True)
 
-st.caption(f"Fortezza v38.9 sbloccata. Orario: {datetime.now().strftime('%H:%M:%S')}")
+st.caption(f"Fortezza v39.0 sbloccata. Orario: {datetime.now().strftime('%H:%M:%S')}")
 time.sleep(10)
 st.rerun()
