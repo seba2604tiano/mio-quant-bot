@@ -7,7 +7,7 @@ import os
 from datetime import datetime, timedelta, timezone
 
 # Configurazione iniziale della pagina
-st.set_page_config(page_title="Quant Agent Global v42.1", layout="wide")
+st.set_page_config(page_title="Quant Agent Global v42.2", layout="wide")
 
 CACHE_FILE = "storico_profitti_cache.json"
 CONFIG_FILE = "config_fortezza.json"
@@ -78,11 +78,12 @@ st.sidebar.subheader("🎛️ Pannello Armamenti")
 attiva_capitale = st.sidebar.toggle("🚀 ATTIVA TRADING AUTOMATICO", value=stato_precedente)
 salva_config_stato(attiva_capitale)
 
-# --- STRUTTURA MULTI-ASSET GLOBAL IMPERIUM ---
+# --- STRUTTURA MULTI-ASSET GLOBAL IMPERIUM EXPANDED (v42.2) ---
 EQUIPAGGIO = {
     "👑 Crypto Blue-Chips Ufficiali (24/7)": ["BTC/USD", "ETH/USD", "SOL/USD"],
     "⚡ Crypto Negoziabili ad Alta Liquidità": ["LTC/USD", "BCH/USD", "LINK/USD", "UNI/USD"],
-    "🇺🇸 I Giganti di Wall Street (Azioni USA)": ["AAPL", "TSLA", "NVDA", "AMZN", "MSFT"],
+    "🇺🇸 I Giganti di Wall Street (Azioni USA)": ["AAPL", "TSLA", "NVDA", "AMZN", "MSFT", "GOOGL", "META", "NFLX", "AMD", "PLTR"],
+    "📊 ETF Indici e Settori Chiave USA": ["SPY", "QQQ", "SOXX", "XLF"],
     "📀 Metalli Preziosi (ETF Safe Haven)": ["GLD", "SLV"]
 }
 
@@ -199,16 +200,16 @@ def scarica_dati_globali_batch(key, secret):
                         tr = pd.concat([high - low, (high - close_prev).abs(), (low - close_prev).abs()], axis=1).max(axis=1)
                         atr_val = tr.rolling(14).mean().iloc[-1] if len(tr) >= 14 else 0
                         mappa_prezzi[s] = {"prezzo": chiusure[-1], "rsi": calcola_rsi(chiusure), "ema200": calcola_ema200(chiusure), "atr": atr_val}
-                    else: mappa_prezzi[s] = {"prezzo": "Chiuso/NoFeed", "rsi": "--", "ema200": None, "atr": 0}
+                    else: mappa_prezzi[s] = {"prezzo": "Fuori Sessione", "rsi": "--", "ema200": None, "atr": 0}
             else:
-                for s in stock_assets: mappa_prezzi[s] = {"prezzo": "Attesa Sessione", "rsi": "--", "ema200": None, "atr": 0}
+                for s in stock_assets: mappa_prezzi[s] = {"prezzo": "Attesa Open", "rsi": "--", "ema200": None, "atr": 0}
         except:
             for s in stock_assets: mappa_prezzi[s] = {"prezzo": "Errore Rete", "rsi": "--", "ema200": None, "atr": 0}
             
     return mappa_prezzi
 
 # --- INTERFACCIA UTENTE ---
-st.markdown("## 🛰️ Quant Agent Global Terminal v42.1 • 3-Tier Security")
+st.markdown("## 🛰️ Quant Agent Global Terminal v42.2 • Imperium Expanded")
 
 if attiva_capitale:
     st.error("🚨 **IMPERIO ARMATO ATTIVO**: Monitoraggio feed istituzionali e protezione acquisti multilivello in esecuzione.")
@@ -279,7 +280,6 @@ for coin in tutti_i_soldati:
             size_ottimizzata = size_dollari
             
         # --- LIVEL 1: LUCCHETTO ANTI-MITRAGLIATRICE ---
-        # Un asset viene considerato occupato sia se esiste su Alpaca sia se è registrato localmente
         blocco_acquisto = ha_posizione_reale or (coin in st.session_state.scatola_nera)
             
         if attiva_capitale:
@@ -346,7 +346,7 @@ for coin in tutti_i_soldati:
                         qty_da_vendere = round(qty_totale / 2, 4)
                         if invia_ordine_market(coin, "sell", qty_da_vendere, True, alpaca_key, alpaca_secret):
                             st.session_state.scatola_nera[coin]["venduto_parziale"] = True
-                            st.session_state.scatola_nera[coin]["break_even_attivo"] = True  # Innesco Break-Even
+                            st.session_state.scatola_nera[coin]["break_even_attivo"] = True
                             invia_notifica_telegram(f"✅ TAKE PROFIT PARZIALE (50%) su {coin}\nPerformance: +{round(guadagno_pct, 2)}%\n🛡️ Blindatura Break-Even attiva sulla quota restante.")
                             st.toast(f"Venduto 50% di {coin}. Break-Even attivo!", icon="🛡️")
 
@@ -388,7 +388,7 @@ for coin in tutti_i_soldati:
     trend_str = "🟢 Rialzista" if (ema200_attuale is None or ultimo_prezzo > ema200_attuale) else "🔴 Ribassista"
     tabella_finale_mappa[coin] = {"Prezzo": ultimo_prezzo, "RSI": rsi_attuale, "Trend (EMA200)": trend_str, "Size Dinamica ($)": round(size_ottimizzata, 2), "Stato": stato}
 
-# --- RENDERING PLANCE DI COMANDO ---
+# --- RENDERING PLANCE DI COMANDO DINGAMICHE ---
 for categoria, monete in EQUIPAGGIO.items():
     st.markdown(f"### {categoria}")
     righe_cat = []
@@ -442,6 +442,6 @@ if st.session_state.storico_profitti:
     st.subheader("💰 Registro dei Bottini di Guerra Persistente")
     st.dataframe(pd.DataFrame(st.session_state.storico_profitti), use_container_width=True)
 
-st.caption(f"Fortezza Hyperdrive v42.1 online. Log Orario: {datetime.now().strftime('%H:%M:%S')}")
+st.caption(f"Fortezza Hyperdrive v42.2 online. Log Orario: {datetime.now().strftime('%H:%M:%S')}")
 time.sleep(10)
 st.rerun()
