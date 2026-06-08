@@ -7,7 +7,7 @@ import os
 from datetime import datetime, timedelta, timezone
 
 # Configurazione iniziale della pagina
-st.set_page_config(page_title="Quant Agent Fast v39.0", layout="wide")
+st.set_page_config(page_title="Quant Agent Fast v39.1", layout="wide")
 
 CACHE_FILE = "storico_profitti_cache.json"
 CONFIG_FILE = "config_fortezza.json"
@@ -62,11 +62,10 @@ st.sidebar.subheader("🏹 Strategia d'Ingresso")
 tipo_strategia = st.sidebar.selectbox("Condizione d'Acquisto", ["Ipervenduto Classico (RSI < 35)", "Inseguimento FOMO (RSI > 65)"])
 
 st.sidebar.markdown("---")
-attiva_capitale = st.sidebar.checkbox("🚀 Attiva Trading Automatico", value=stato_precedente)
+st.sidebar.subheader("🎛️ Pannello Armamenti")
+# MIGLIORAMENTO UX: Trasformato in un interruttore Toggle Aeronautico
+attiva_capitale = st.sidebar.toggle("🚀 ATTIVA TRADING AUTOMATICO", value=stato_precedente)
 salva_config_stato(attiva_capitale)
-
-if attiva_capitale:
-    st.sidebar.warning("⚠️ AUTOMAZIONE ATTIVA: La fortezza è in caccia continua.")
 
 # Asset stabili certificati Alpaca
 EQUIPAGGIO = {
@@ -147,14 +146,12 @@ def invia_ordine_market(simbolo, lato, quantita_o_dollari, is_qty, key, secret):
     except: 
         return False
 
-# --- FUNZIONE SCANSIONE BATCH TEMPORIZZATA ANTI-TAPPO ---
 def scarica_dati_globali_batch(key, secret):
     if not key or not secret: 
         return {}
     headers = {"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret}
     simboli_cumulati = ",".join(tutti_i_soldati)
     
-    # FIX FINESTRA TEMPORALE: Chiediamo solo le ultime 6 ore per evitare accumuli e sbloccare le lettere S-Z
     ora_inizio = (datetime.now(timezone.utc) - timedelta(hours=6)).strftime("%Y-%m-%dT%H:%M:%SZ")
     params = {"symbols": simboli_cumulati, "timeframe": "2Min", "limit": 5000, "start": ora_inizio}
     
@@ -180,7 +177,13 @@ def scarica_dati_globali_batch(key, secret):
     return mappa_prezzi
 
 # --- GRAFICA TERMINALE OPERATIVO ---
-st.markdown("## 🛰️ Quant Agent High-Speed Terminal v39.0 — ULTRA-BATCH ANTI-TAPPO")
+st.markdown("## 🛰️ Quant Agent High-Speed Terminal v39.1")
+
+# --- MIGLIORAMENTO CRITICO: MEGA BANNER DI STATO CENTRALE ---
+if attiva_capitale:
+    st.error("🚨 **SISTEMA DI FUOCO ARMATO**: Il Trading Automatico è ATTIVO. Il bot aprirà e chiuderà posizioni autonomamente in tempo reale secondo la strategia impostata.")
+else:
+    st.info("🛡️ **MODALITÀ VEDETTA IN SICUREZZA**: L'Automazione è SPENTA. Il bot scansiona i mercati e aggiorna i dati grafici, ma NON invierà alcun ordine ad Alpaca.")
 
 # Controlli Sidebar
 st.sidebar.markdown("---")
@@ -215,7 +218,7 @@ with c1:
 with c2: 
     st.metric("🛡️ Capitale Corazzata", f"$ {info_conto['portfolio_value']}")
 with c3: 
-    st.metric("💵 CASSA PROFITTI SESSIONE", f"$ {round(totale_guadagnato, 2)}", delta="Ottimizzazione Batch Totale")
+    st.metric("💵 CASSA PROFITTI SESSIONE", f"$ {round(totale_guadagnato, 2)}", delta="UX Controllo Ottimizzato")
 
 # Esegui la chiamata batch protetta
 dati_mercato_freschi = scarica_dati_globali_batch(alpaca_key, alpaca_secret)
@@ -277,7 +280,7 @@ for coin in tutti_i_soldati:
 
     tabella_finale_mappa[coin] = {"Prezzo": ultimo_prezzo, "RSI": rsi_attuale, "Stato": stato}
 
-# --- RENDERING PYARROW COMPATIBLE ---
+# --- RENDERING BATCH TABELLE ---
 for categoria, monete in EQUIPAGGIO.items():
     st.markdown(f"### {categoria}")
     righe_cat = []
@@ -323,6 +326,6 @@ if st.session_state.scatola_nera:
     st.subheader("📊 Inseguimento Scatola Nera Attiva")
     st.dataframe(pd.DataFrame(st.session_state.scatola_nera).T, use_container_width=True)
 
-st.caption(f"Fortezza v39.0 sbloccata. Orario: {datetime.now().strftime('%H:%M:%S')}")
+st.caption(f"Fortezza v39.1 sbloccata. Orario: {datetime.now().strftime('%H:%M:%S')}")
 time.sleep(10)
 st.rerun()
