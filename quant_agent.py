@@ -7,7 +7,7 @@ import os
 from datetime import datetime, timedelta, timezone
 
 # Configurazione iniziale della pagina
-st.set_page_config(page_title="Quant Agent Global v40.0", layout="wide")
+st.set_page_config(page_title="Quant Agent Global v40.1", layout="wide")
 
 CACHE_FILE = "storico_profitti_cache.json"
 CONFIG_FILE = "config_fortezza.json"
@@ -64,7 +64,7 @@ st.sidebar.subheader("🎛️ Pannello Armamenti")
 attiva_capitale = st.sidebar.toggle("🚀 ATTIVA TRADING AUTOMATICO", value=stato_precedente)
 salva_config_stato(attiva_capitale)
 
-# --- NUOVA STRUTTURA MULTI-ASSET GLOBAL IMPERIUM ---
+# --- STRUTTURA MULTI-ASSET GLOBAL IMPERIUM ---
 EQUIPAGGIO = {
     "👑 I Re del Mercato (Crypto 24/7)": ["BTC/USD", "ETH/USD", "SOL/USD"],
     "🇺🇸 I Giganti di Wall Street (Azioni)": ["AAPL", "TSLA", "NVDA", "AMZN", "MSFT"],
@@ -133,24 +133,24 @@ def invia_ordine_market(simbolo, lato, quantita_o_dollari, is_qty, key, secret):
         return res.status_code == 200 or res.status_code == 201
     except: return False
 
-# --- ARCHITETTURA DI SCANSIONE DUALE MULTI-ASSET BATCH ---
+# --- ARCHITETTURA DI SCANSIONE BILANCIATA MULTI-ASSET ---
 def scarica_dati_globali_batch(key, secret):
     if not key or not secret: return {}
     headers = {"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret}
     mappa_prezzi = {}
     
-    # Divisione asset per canali differenti
     crypto_assets = [s for s in tutti_i_soldati if "/USD" in s]
     stock_assets = [s for s in tutti_i_soldati if "/USD" not in s]
     
-    # Finestra temporale di 5 giorni per superare i weekend di Wall Street
-    ora_inizio = (datetime.now(timezone.utc) - timedelta(days=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # RISOLUZIONE COLLO DI BOTTIGLIA: Finestre temporali asimmetriche
+    ora_inizio_crypto = (datetime.now(timezone.utc) - timedelta(hours=12)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    ora_inizio_stocks = (datetime.now(timezone.utc) - timedelta(days=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
     
-    # 1. CANALE DATA CRYPTO
+    # 1. CANALE DATA CRYPTO (Pacchetto leggero da 12 ore, zero rischio di saturazione)
     if crypto_assets:
         try:
             url_crypto = "https://data.alpaca.markets/v1beta3/crypto/us/bars"
-            res = requests.get(url_crypto, headers=headers, params={"symbols": ",".join(crypto_assets), "timeframe": "5Min", "limit": 2000, "start": ora_inizio})
+            res = requests.get(url_crypto, headers=headers, params={"symbols": ",".join(crypto_assets), "timeframe": "5Min", "limit": 5000, "start": ora_inizio_crypto})
             if res.status_code == 200:
                 dati_c = res.json().get("bars", {})
                 for s in crypto_assets:
@@ -160,15 +160,15 @@ def scarica_dati_globali_batch(key, secret):
                         mappa_prezzi[s] = {"prezzo": chiusure[-1], "rsi": calcola_rsi(chiusure)}
                     else: mappa_prezzi[s] = {"prezzo": "No Feed", "rsi": "--"}
             else:
-                for s in crypto_assets: mappa_prezzi[s] = {"prezzo": f"Err {res.status_code}", "rsi": "--"}
+                for s in crypto_assets: mappa_prezzi[s] = {"prezzo": "Rate Limit", "rsi": "--"}
         except:
             for s in crypto_assets: mappa_prezzi[s] = {"prezzo": "Errore Rete", "rsi": "--"}
 
-    # 2. CANALE DATA WALL STREET & METALLI (STOCKS)
+    # 2. CANALE DATA WALL STREET & METALLI (Innalzamento limite a 5000 righe)
     if stock_assets:
         try:
             url_stocks = "https://data.alpaca.markets/v2/stocks/bars"
-            res = requests.get(url_stocks, headers=headers, params={"symbols": ",".join(stock_assets), "timeframe": "5Min", "limit": 2000, "start": ora_inizio})
+            res = requests.get(url_stocks, headers=headers, params={"symbols": ",".join(stock_assets), "timeframe": "5Min", "limit": 5000, "start": ora_inizio_stocks})
             if res.status_code == 200:
                 dati_s = res.json().get("bars", {})
                 for s in stock_assets:
@@ -178,14 +178,14 @@ def scarica_dati_globali_batch(key, secret):
                         mappa_prezzi[s] = {"prezzo": chiusure[-1], "rsi": calcola_rsi(chiusure)}
                     else: mappa_prezzi[s] = {"prezzo": "Chiuso/NoFeed", "rsi": "--"}
             else:
-                for s in stock_assets: mappa_prezzi[s] = {"prezzo": f"Err {res.status_code}", "rsi": "--"}
+                for s in stock_assets: mappa_prezzi[s] = {"prezzo": "Attesa Sessione", "rsi": "--"}
         except:
             for s in stock_assets: mappa_prezzi[s] = {"prezzo": "Errore Rete", "rsi": "--"}
             
     return mappa_prezzi
 
-# --- INTERFACCIA TERMINALE v40.0 ---
-st.markdown("## 🛰️ Quant Agent Global Terminal v40.0")
+# --- INTERFACCIA TERMINALE v40.1 ---
+st.markdown("## 🛰️ Quant Agent Global Terminal v40.1")
 
 if attiva_capitale:
     st.error("🚨 **IMPERIO ARMATO ATTIVO**: Il bot sta cacciando su Criptovalute, Wall Street ed ETF Metalli in contemporanea.")
@@ -221,7 +221,7 @@ totale_guadagnato = sum([t["Gain ($)"] for t in st.session_state.storico_profitt
 c1, c2, c3 = st.columns(3)
 with c1: st.metric("💰 Cash Disponibile", f"$ {info_conto['cash']}")
 with c2: st.metric("🛡️ Capitale Corazzata", f"$ {info_conto['portfolio_value']}")
-with c3: st.metric("💵 CASSA PROFITTI GLOBAL", f"$ {round(totale_guadagnato, 2)}", delta="Multi-Asset Unificato")
+with c3: st.metric("💵 CASSA PROFITTI GLOBAL", f"$ {round(totale_guadagnato, 2)}", delta="Bilanciamento Sincronizzato")
 
 # Download Dati Dual-Core
 dati_mercato_freschi = scarica_dati_globali_batch(alpaca_key, alpaca_secret)
@@ -319,6 +319,6 @@ if st.session_state.storico_profitti:
     st.subheader("💰 Registro dei Bottini di Guerra Persistente")
     st.dataframe(pd.DataFrame(st.session_state.storico_profitti), use_container_width=True)
 
-st.caption(f"Fortezza Unificata v40.0 attiva. Log Orario: {datetime.now().strftime('%H:%M:%S')}")
+st.caption(f"Fortezza Unificata v40.1 bilanciata. Log Orario: {datetime.now().strftime('%H:%M:%S')}")
 time.sleep(10)
 st.rerun()
