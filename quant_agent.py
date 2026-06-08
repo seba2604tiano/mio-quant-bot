@@ -7,7 +7,7 @@ import os
 from datetime import datetime, timedelta, timezone
 
 # Configurazione iniziale della pagina
-st.set_page_config(page_title="Quant Agent Fast v39.1", layout="wide")
+st.set_page_config(page_title="Quant Agent Fast v39.2", layout="wide")
 
 CACHE_FILE = "storico_profitti_cache.json"
 CONFIG_FILE = "config_fortezza.json"
@@ -63,7 +63,7 @@ tipo_strategia = st.sidebar.selectbox("Condizione d'Acquisto", ["Ipervenduto Cla
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("🎛️ Pannello Armamenti")
-# MIGLIORAMENTO UX: Trasformato in un interruttore Toggle Aeronautico
+# Interruttore Toggle Aeronautico Persistente
 attiva_capitale = st.sidebar.toggle("🚀 ATTIVA TRADING AUTOMATICO", value=stato_precedente)
 salva_config_stato(attiva_capitale)
 
@@ -176,16 +176,16 @@ def scarica_dati_globali_batch(key, secret):
             mappa_prezzi[s] = {"prezzo": "Errore Rete", "rsi": "--"}
     return mappa_prezzi
 
-# --- GRAFICA TERMINALE OPERATIVO ---
-st.markdown("## 🛰️ Quant Agent High-Speed Terminal v39.1")
+# --- RENDERING INTERFACCIA GRAFICA ---
+st.markdown("## 🛰️ Quant Agent High-Speed Terminal v39.2")
 
-# --- MIGLIORAMENTO CRITICO: MEGA BANNER DI STATO CENTRALE ---
+# INIEZIONE SICURA BANNER CENTRALI
 if attiva_capitale:
     st.error("🚨 **SISTEMA DI FUOCO ARMATO**: Il Trading Automatico è ATTIVO. Il bot aprirà e chiuderà posizioni autonomamente in tempo reale secondo la strategia impostata.")
 else:
     st.info("🛡️ **MODALITÀ VEDETTA IN SICUREZZA**: L'Automazione è SPENTA. Il bot scansiona i mercati e aggiorna i dati grafici, ma NON invierà alcun ordine ad Alpaca.")
 
-# Controlli Sidebar
+# Barra Laterale: Pulsanti di Emergenza e Manutenzione
 st.sidebar.markdown("---")
 st.sidebar.subheader("🚨 Protocollo Difesa")
 if st.sidebar.button("💥 PANIC BUTTON MANUALE"):
@@ -208,6 +208,7 @@ if st.sidebar.button("🔄 Reset Dati Sessione"):
     time.sleep(0.5)
     st.rerun()
 
+# Recupero Metriche Finanziarie Real-Time
 info_conto = ottieni_bilancio_conto(alpaca_key, alpaca_secret)
 pos_reali = ottieni_posizioni_reali(alpaca_key, alpaca_secret)
 totale_guadagnato = sum([t["Gain ($)"] for t in st.session_state.storico_profitti])
@@ -218,12 +219,12 @@ with c1:
 with c2: 
     st.metric("🛡️ Capitale Corazzata", f"$ {info_conto['portfolio_value']}")
 with c3: 
-    st.metric("💵 CASSA PROFITTI SESSIONE", f"$ {round(totale_guadagnato, 2)}", delta="UX Controllo Ottimizzato")
+    st.metric("💵 CASSA PROFITTI SESSIONE", f"$ {round(totale_guadagnato, 2)}", delta="Iniezione Completa Verificata")
 
-# Esegui la chiamata batch protetta
+# Esecui Scansione ad Alta Velocità Anti-Tappo
 dati_mercato_freschi = scarica_dati_globali_batch(alpaca_key, alpaca_secret)
 
-# Elaborazione trading ed esposizione tabelle
+# Motore di Calcolo delle Condizioni Algoritmiche
 tabella_finale_mappa = {}
 for coin in tutti_i_soldati:
     coin_clean = coin.replace("/", "")
@@ -280,7 +281,7 @@ for coin in tutti_i_soldati:
 
     tabella_finale_mappa[coin] = {"Prezzo": ultimo_prezzo, "RSI": rsi_attuale, "Stato": stato}
 
-# --- RENDERING BATCH TABELLE ---
+# --- GENERAZIONE GRID COMPATIBILI CON PYARROW ---
 for categoria, monete in EQUIPAGGIO.items():
     st.markdown(f"### {categoria}")
     righe_cat = []
@@ -304,7 +305,7 @@ for categoria, monete in EQUIPAGGIO.items():
         })
     st.dataframe(pd.DataFrame(righe_cat), use_container_width=True, hide_index=True)
 
-# Console di stress-test manuale
+# Blocco di Forzatura Manuale per Sandbox Test
 st.markdown("---")
 st.subheader("🛠️ Console di Controllo Manuale (Stress-Test Sandbox)")
 token_scelto = st.selectbox("Seleziona Asset da Forzare", tutti_i_soldati)
@@ -316,6 +317,7 @@ if st.button("🛒 FORZA ACQUISTO MANUALE (Test)"):
         time.sleep(0.5)
         st.rerun()
 
+# Tabelle Log Storici Sessione
 if st.session_state.storico_profitti:
     st.markdown("---")
     st.subheader("💰 Registro dei Bottini di Guerra Persistente")
@@ -326,6 +328,6 @@ if st.session_state.scatola_nera:
     st.subheader("📊 Inseguimento Scatola Nera Attiva")
     st.dataframe(pd.DataFrame(st.session_state.scatola_nera).T, use_container_width=True)
 
-st.caption(f"Fortezza v39.1 sbloccata. Orario: {datetime.now().strftime('%H:%M:%S')}")
+st.caption(f"Fortezza v39.2 sbloccata. Orario: {datetime.now().strftime('%H:%M:%S')}")
 time.sleep(10)
 st.rerun()
