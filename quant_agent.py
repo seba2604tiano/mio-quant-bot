@@ -4,10 +4,11 @@ import requests
 import time
 import json
 import os
+import yfinance as yf
 from datetime import datetime, timedelta, timezone
 
 # Configurazione iniziale della pagina
-st.set_page_config(page_title="Quant Agent Global v43.2", layout="wide")
+st.set_page_config(page_title="Quant Agent Global v44.0", layout="wide")
 
 CACHE_FILE = "storico_profitti_cache.json"
 CONFIG_FILE = "config_fortezza.json"
@@ -78,7 +79,7 @@ st.sidebar.subheader("🎛️ Pannello Armamenti")
 attiva_capitale = st.sidebar.toggle("🚀 ATTIVA TRADING AUTOMATICO", value=stato_precedente)
 salva_config_stato(attiva_capitale)
 
-# --- STRUTTURA MULTI-ASSET GLOBAL v43.2 (I 20 GIGANTI + CRYPTO & ETF) ---
+# --- STRUTTURA MULTI-ASSET GLOBAL v44.0 ---
 EQUIPAGGIO = {
     "👑 Crypto Blue-Chips Ufficiali (24/7)": ["BTC/USD", "ETH/USD", "SOL/USD"],
     "🇺🇸 I Giganti di Wall Street (Azioni USA)": [
@@ -154,73 +155,64 @@ def invia_ordine_market(simbolo, lato, quantita_o_dollari, is_qty, key, secret):
         return res.status_code == 200 or res.status_code == 201
     except: return False
 
+# --- 🔥 NUOVO MOTORE DI SCANSIONE IBRIDO (YAHOO FINANCE RADAR) ---
 def scarica_dati_globali_batch(key, secret):
-    if not key or not secret: return {}
-    headers = {"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret}
     mappa_prezzi = {}
+    ticker_mapping = {}
     
-    crypto_assets = [s for s in tutti_i_soldati if "/USD" in s]
-    stock_assets = [s for s in tutti_i_soldati if "/USD" not in s]
+    # Mappiamo i ticker per renderli digeribili da Yahoo Finance (es. BTC/USD -> BTC-USD)
+    for s in tutti_i_soldati:
+        yf_ticker = s.replace("/", "-") if "/USD" in s else s
+        ticker_mapping[yf_ticker] = s
+        
+    tickers_list = list(ticker_mapping.keys())
     
-    ora_inizio_crypto = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    ora_inizio_stocks = (datetime.now(timezone.utc) - timedelta(days=4)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    
-    if crypto_assets:
-        try:
-            url_crypto = "https://data.alpaca.markets/v1beta3/crypto/us/bars"
-            res = requests.get(url_crypto, headers=headers, params={"symbols": ",".join(crypto_assets), "timeframe": "5Min", "limit": 10000, "start": ora_inizio_crypto})
-            if res.status_code == 200:
-                dati_c = res.json().get("bars", {})
-                for s in crypto_assets:
-                    barre = dati_c.get(s, dati_c.get(s.replace("/", ""), []))
-                    if barre:
-                        df = pd.DataFrame(barre)
-                        chiusure = df["c"].tolist()
-                        high, low, close_prev = df["h"], df["l"], df["c"].shift(1)
-                        tr = pd.concat([high - low, (high - close_prev).abs(), (low - close_prev).abs()], axis=1).max(axis=1)
-                        atr_val = tr.rolling(14).mean().iloc[-1] if len(tr) >= 14 else 0
-                        mappa_prezzi[s] = {"prezzo": chiusure[-1], "rsi": calcola_rsi(chiusure), "ema200": calcola_ema200(chiusure), "atr": atr_val}
-                    else: mappa_prezzi[s] = {"prezzo": "No Feed", "rsi": "--", "ema200": None, "atr": 0}
-            else:
-                for s in crypto_assets: mappa_prezzi[s] = {"prezzo": "Rate Limit", "rsi": "--", "ema200": None, "atr": 0}
-        except:
-            for s in crypto_assets: mappa_prezzi[s] = {"prezzo": "Errore Rete", "rsi": "--", "ema200": None, "atr": 0}
-
-    if stock_assets:
-        try:
-            url_stocks = "https://data.alpaca.markets/v2/stocks/bars"
-            # 🔥 FEED IEX ATTIVO: Forza Alpaca a caricare lo storico completo per tutti i 20 titoli
-            res = requests.get(url_stocks, headers=headers, params={
-                "symbols": ",".join(stock_assets), 
-                "timeframe": "5Min", 
-                "limit": 10000, 
-                "start": ora_inizio_stocks,
-                "feed": "iex"
-            })
-            if res.status_code == 200:
-                dati_s = res.json().get("bars", {})
-                for s in stock_assets:
-                    barre = dati_s.get(s, [])
-                    if barre:
-                        df = pd.DataFrame(barre)
-                        chiusure = df["c"].tolist()
-                        high, low, close_prev = df["h"], df["l"], df["c"].shift(1)
-                        tr = pd.concat([high - low, (high - close_prev).abs(), (low - close_prev).abs()], axis=1).max(axis=1)
-                        atr_val = tr.rolling(14).mean().iloc[-1] if len(tr) >= 14 else 0
-                        mappa_prezzi[s] = {"prezzo": chiusure[-1], "rsi": calcola_rsi(chiusure), "ema200": calcola_ema200(chiusure), "atr": atr_val}
-                    else: mappa_prezzi[s] = {"prezzo": "No Liquidity", "rsi": "--", "ema200": None, "atr": 0}
-            else:
-                for s in stock_assets: mappa_prezzi[s] = {"prezzo": "Errore Server", "rsi": "--", "ema200": None, "atr": 0}
-        except:
-            for s in stock_assets: mappa_prezzi[s] = {"prezzo": "Errore Rete", "rsi": "--", "ema200": None, "atr": 0}
+    try:
+        # Scarichiamo timeframes a 5 minuti degli ultimi 5 giorni (copre l'EMA200 in modo ottimale)
+        df_global = yf.download(" ".join(tickers_list), period="5d", interval="5m", progress=False)
+        
+        for yf_tick, orig_tick in ticker_mapping.items():
+            try:
+                if len(tickers_list) == 1:
+                    df_tick = df_global.dropna()
+                else:
+                    df_tick = pd.DataFrame({
+                        "Close": df_global["Close"][yf_tick],
+                        "High": df_global["High"][yf_tick],
+                        "Low": df_global["Low"][yf_tick]
+                    }).dropna()
+                
+                if not df_tick.empty and "Close" in df_tick:
+                    chiusure = df_tick["Close"].tolist()
+                    high = df_tick["High"]
+                    low = df_tick["Low"]
+                    close_prev = df_tick["Close"].shift(1)
+                    
+                    # Calcolo ATR standard
+                    tr = pd.concat([high - low, (high - close_prev).abs(), (low - close_prev).abs()], axis=1).max(axis=1)
+                    atr_val = tr.rolling(14).mean().iloc[-1] if len(tr) >= 14 else 0
+                    
+                    mappa_prezzi[orig_tick] = {
+                        "prezzo": round(chiusure[-1], 4) if chiusure[-1] < 1 else round(chiusure[-1], 2),
+                        "rsi": calcola_rsi(chiusure),
+                        "ema200": calcola_ema200(chiusure),
+                        "atr": atr_val
+                    }
+                else:
+                    mappa_prezzi[orig_tick] = {"prezzo": "Senza Feed", "rsi": "--", "ema200": None, "atr": 0}
+            except:
+                mappa_prezzi[orig_tick] = {"prezzo": "Errore Elab.", "rsi": "--", "ema200": None, "atr": 0}
+    except:
+        for s in tutti_i_soldati:
+            mappa_prezzi[s] = {"prezzo": "Offline Radar", "rsi": "--", "ema200": None, "atr": 0}
             
     return mappa_prezzi
 
 # --- INTERFACCIA UTENTE ---
-st.markdown("## 🛰️ Quant Agent Global Terminal v43.2 • Imperium Maxima")
+st.markdown("## 🛰️ Quant Agent Global Terminal v44.0 • Hybrid Radar Engine")
 
 if attiva_capitale:
-    st.error("🚨 **IMPERIO ARMATO ATTIVO**: Monitoraggio feed istituzionali e protezione acquisti multilivello in esecuzione.")
+    st.error("🚨 **IMPERIO ARMATO ATTIVO**: Monitoraggio feed satellitari e protezione acquisti multilivello in esecuzione.")
 else:
     st.info("🛡️ **MODALITÀ VEDETTA IN SICUREZZA**: Visualizzazione metriche attiva. Nessun ordine verrà inoltrato.")
 
@@ -479,6 +471,6 @@ if st.session_state.storico_profitti:
     st.subheader("📋 Registro Completo di Sessione (Storico Generale)")
     st.dataframe(pd.DataFrame(st.session_state.storico_profitti), use_container_width=True)
 
-st.caption(f"Fortezza Hyperdrive v43.2 online. Log Orario: {datetime.now().strftime('%H:%M:%S')}")
+st.caption(f"Fortezza Hyperdrive v44.0 online. Log Orario: {datetime.now().strftime('%H:%M:%S')}")
 time.sleep(10)
 st.rerun()
