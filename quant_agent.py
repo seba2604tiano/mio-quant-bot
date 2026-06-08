@@ -36,18 +36,17 @@ ATR_MULTIPLIER = 1.5
 # Lista Asset Unificata (Crypto, Azioni, ETF)
 ASSET_UNIVERSE = [
     # 🌟 CRIPTOVALUTE (Attive 24/7)
-    "BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "XRP-USD", "ADA-USD", "LINK-USD",
+    "BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "XRP-USD", "ADA-USD", "LINK-USD", "AVAX-USD", "DOGE-USD",
     
-    # 🏎️ TECNOLOGIA & MOMENTUM (I campioni di Wall Street)
-    "NVDA", "TSLA", "AAPL", "MSFT", "AMZN", "META", "GOOGL", "NFLX", "AMD",
+    # 🏎️ TECNOLOGIA & MOMENTUM (Wall Street)
+    "NVDA", "TSLA", "AAPL", "MSFT", "AMZN", "META", "GOOGL", "NFLX", "AMD", "INTC", "QCOM",
     
-    # 🔋 TITOLI COMPORTAMENTALI & AI (Alta volatilità)
-    "PLTR", "COIN", "MARA", "SMCI", "BABA",
+    # 🔋 TITOLI COMPORTAMENTALI, FINTECH & EV
+    "PLTR", "COIN", "MARA", "SMCI", "BABA", "SQ", "HOOD", "NIO",
     
     # 🛡️ ETF & MATERIE PRIME (Coperture macro)
-    "SPY", "QQQ", "IWM", "DIA", "GLD", "SLV", "USO", "SMH", "ARKK"
+    "SPY", "QQQ", "IWM", "DIA", "GLD", "SLV", "USO", "SMH", "ARKK", "XLE", "XBI", "TLT"
 ]
-
 # Mapping per Alpaca (Rimuove il trattino per le crypto in esecuzione reale)
 def clean_ticker_for_alpaca(ticker):
     return ticker.replace("-", "")
