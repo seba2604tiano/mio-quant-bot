@@ -7,7 +7,7 @@ import os
 from datetime import datetime, timedelta, timezone
 
 # Configurazione iniziale della pagina
-st.set_page_config(page_title="Quant Agent Global v41.0", layout="wide")
+st.set_page_config(page_title="Quant Agent Global v41.1", layout="wide")
 
 CACHE_FILE = "storico_profitti_cache.json"
 CONFIG_FILE = "config_fortezza.json"
@@ -160,15 +160,15 @@ def scarica_dati_globali_batch(key, secret):
     crypto_assets = [s for s in tutti_i_soldati if "/USD" in s]
     stock_assets = [s for s in tutti_i_soldati if "/USD" not in s]
     
-    # Finestre per catturare abbastanza candele per l'EMA 200 sui 5 minuti
-    ora_inizio_crypto = (datetime.now(timezone.utc) - timedelta(days=3)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    ora_inizio_stocks = (datetime.now(timezone.utc) - timedelta(days=6)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # Finestre ridotte per evitare saturazione di memoria + limit aumentato a 10000
+    ora_inizio_crypto = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    ora_inizio_stocks = (datetime.now(timezone.utc) - timedelta(days=4)).strftime("%Y-%m-%dT%H:%M:%SZ")
     
     # 1. GENERATORE CORE CRYPTO
     if crypto_assets:
         try:
             url_crypto = "https://data.alpaca.markets/v1beta3/crypto/us/bars"
-            res = requests.get(url_crypto, headers=headers, params={"symbols": ",".join(crypto_assets), "timeframe": "5Min", "limit": 5000, "start": ora_inizio_crypto})
+            res = requests.get(url_crypto, headers=headers, params={"symbols": ",".join(crypto_assets), "timeframe": "5Min", "limit": 10000, "start": ora_inizio_crypto})
             if res.status_code == 200:
                 dati_c = res.json().get("bars", {})
                 for s in crypto_assets:
@@ -177,7 +177,6 @@ def scarica_dati_globali_batch(key, secret):
                         df = pd.DataFrame(barre)
                         chiusure = df["c"].tolist()
                         
-                        # Calcolo Volatilità ATR (14 periodi)
                         high, low, close_prev = df["h"], df["l"], df["c"].shift(1)
                         tr = pd.concat([high - low, (high - close_prev).abs(), (low - close_prev).abs()], axis=1).max(axis=1)
                         atr_val = tr.rolling(14).mean().iloc[-1] if len(tr) >= 14 else 0
@@ -193,7 +192,7 @@ def scarica_dati_globali_batch(key, secret):
     if stock_assets:
         try:
             url_stocks = "https://data.alpaca.markets/v2/stocks/bars"
-            res = requests.get(url_stocks, headers=headers, params={"symbols": ",".join(stock_assets), "timeframe": "5Min", "limit": 5000, "start": ora_inizio_stocks})
+            res = requests.get(url_stocks, headers=headers, params={"symbols": ",".join(stock_assets), "timeframe": "5Min", "limit": 10000, "start": ora_inizio_stocks})
             if res.status_code == 200:
                 dati_s = res.json().get("bars", {})
                 for s in stock_assets:
@@ -202,7 +201,6 @@ def scarica_dati_globali_batch(key, secret):
                         df = pd.DataFrame(barre)
                         chiusure = df["c"].tolist()
                         
-                        # Calcolo Volatilità ATR (14 periodi)
                         high, low, close_prev = df["h"], df["l"], df["c"].shift(1)
                         tr = pd.concat([high - low, (high - close_prev).abs(), (low - close_prev).abs()], axis=1).max(axis=1)
                         atr_val = tr.rolling(14).mean().iloc[-1] if len(tr) >= 14 else 0
@@ -216,8 +214,8 @@ def scarica_dati_globali_batch(key, secret):
             
     return mappa_prezzi
 
-# --- INTERFACCIA TERMINALE v41.0 ---
-st.markdown("## 🛰️ Quant Agent Global Terminal v41.0 • Hyperdrive Mode")
+# --- INTERFACCIA TERMINALE v41.1 ---
+st.markdown("## 🛰️ Quant Agent Global Terminal v41.1 • Hyperdrive Mode")
 
 if attiva_capitale:
     st.error("🚨 **IMPERIO ARMATO ATTIVO**: Filtro EMA200 operativo, Adattatore Munizioni ATR inserito e Satellite Telegram connesso.")
@@ -276,22 +274,19 @@ for coin in tutti_i_soldati:
         if not ha_posizione and coin in st.session_state.scatola_nera:
             del st.session_state.scatola_nera[coin]
             
-        # --- CALCOLO FILTRO TREND & MUNIZIONI ATR ---
         trend_rialzista = True if (ema200_attuale is None or ultimo_prezzo > ema200_attuale) else False
         
-        # Sizing Adattivo: prendiamo come riferimento uno scostamento medio dello 0.35% sulla candela a 5m
         if atr_attuale > 0:
             atr_pct = (atr_attuale / ultimo_prezzo) * 100
             moltiplicatore_volatilità = 0.35 / max(atr_pct, 0.02)
-            moltiplicatore_volatilità = max(0.4, min(moltiplicatore_volatilità, 1.8)) # Limiti di sicurezza size (da 0.4x a 1.8x)
+            moltiplicatore_volatilità = max(0.4, min(moltiplicatore_volatilità, 1.8))
             size_ottimizzata = round(size_dollari * moltiplicatore_volatilità, 2)
         else:
             size_ottimizzata = size_dollari
             
         if attiva_capitale:
-            # Condizioni d'ingresso strategiche
             if "Ipervenduto" in tipo_strategia:
-                condizione_ingresso = (rsi_attuale < 35) and trend_rialzista  # COMPRA SOLO IN TREND RIALZISTA
+                condizione_ingresso = (rsi_attuale < 35) and trend_rialzista
             else:
                 condizione_ingresso = (rsi_attuale > 65)
                 
@@ -314,14 +309,12 @@ for coin in tutti_i_soldati:
                 discesa_dal_massimo = ((dati_pos["prezzo_massimo"] - ultimo_prezzo) / dati_pos["prezzo_massimo"]) * 100
                 stato = f"📦 {round(guadagno_pct, 2)}%"
                 
-                # Piramidazione FOMO controllata
                 if "FOMO" in tipo_strategia and rsi_attuale > 78 and not dati_pos.get("piramidato", False):
                     if invia_ordine_market(coin, "buy", size_ottimizzata, False, alpaca_key, alpaca_secret):
                         st.session_state.scatola_nera[coin]["prezzo_acquisto"] = (dati_pos["prezzo_acquisto"] + ultimo_prezzo) / 2
                         st.session_state.scatola_nera[coin]["piramidato"] = True
                         st.session_state.scatola_nera[coin]["size_effettiva"] += size_ottimizzata
                 
-                # Esecuzione Trailing Stop Focoso
                 if guadagno_pct >= trailing_activation and discesa_dal_massimo >= trailing_distance:
                     qty_esatta = pos_reali.get(coin_clean, pos_reali.get(coin))["qty"]
                     if invia_ordine_market(coin, "sell", qty_esatta, True, alpaca_key, alpaca_secret):
@@ -349,9 +342,17 @@ for categoria, monete in EQUIPAGGIO.items():
     for coin in monete:
         d = tabella_finale_mappa.get(coin, {"Prezzo": "--", "RSI": "--", "Trend (EMA200)": "--", "Size Dinamica ($)": "--", "Stato": "--"})
         p_val = d["Prezzo"]
+        
+        # Formattazione dinamica ad alta precisione per meme-coin micro-centesimali
         if isinstance(p_val, (int, float)):
-            p_str = f"$ {p_val:,.4f}" if p_val < 1 else f"$ {p_val:,.2f}"
-        else: p_str = str(p_val)
+            if p_val < 0.01:
+                p_str = f"$ {p_val:,.8f}"
+            elif p_val < 1:
+                p_str = f"$ {p_val:,.4f}"
+            else:
+                p_str = f"$ {p_val:,.2f}"
+        else: 
+            p_str = str(p_val)
             
         rsi_val = d["RSI"]
         rsi_str = f"{rsi_val:.2f}" if isinstance(rsi_val, (int, float)) else str(rsi_val)
@@ -380,6 +381,6 @@ if st.session_state.storico_profitti:
     st.subheader("💰 Registro dei Bottini di Guerra Persistente")
     st.dataframe(pd.DataFrame(st.session_state.storico_profitti), use_container_width=True)
 
-st.caption(f"Fortezza Hyperdrive v41.0 online. Log Orario: {datetime.now().strftime('%H:%M:%S')}")
+st.caption(f"Fortezza Hyperdrive v41.1 online. Log Orario: {datetime.now().strftime('%H:%M:%S')}")
 time.sleep(10)
 st.rerun()
