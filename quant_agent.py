@@ -1,432 +1,367 @@
 import streamlit as st
 import pandas as pd
-import requests
+import numpy as np
+import datetime
 import time
-import json
-import os
 import yfinance as yf
-from datetime import datetime, timedelta, timezone
+from alpaca.trading.client import TradingClient
+from alpaca.trading.requests import MarketOrderRequest, LimitOrderRequest
+from alpaca.trading.enums import OrderSide, TimeInForce
 
-# Configurazione iniziale della pagina
-st.set_page_config(page_title="Quant Agent Global v45.0", layout="wide")
+# =====================================================================
+# 1. CONFIGURAZIONE CONFIG E STILE DELLA PLATFORM
+# =====================================================================
+st.set_page_config(page_title="CORAZZATA QUANT v46.0", layout="wide", initial_sidebar_state="expanded")
 
-CACHE_FILE = "storico_profitti_cache.json"
-CONFIG_FILE = "config_fortezza.json"
+# Inizializzazione degli Stati di Memoria Globali (Streamlit Session State)
+if "SYSTEM_STATE" not in st.session_state:
+    st.session_state.SYSTEM_STATE = "NORMAL"  # NORMAL, STORM_LOCK, SCOUT_MODE
+if "STORM_TRIGGER_TICKER" not in st.session_state:
+    st.session_state.STORM_TRIGGER_TICKER = None
+if "LOG_TRADES" not in st.session_state:
+    st.session_state.LOG_TRADES = []
+if "TOTAL_PROFIT_USD" not in st.session_state:
+    st.session_state.TOTAL_PROFIT_USD = 0.0
+if "BOT_RUNNING" not in st.session_state:
+    st.session_state.BOT_RUNNING = False
+if "TRACKED_POSITIONS" not in st.session_state:
+    st.session_state.TRACKED_POSITIONS = {} # Struttura per gestire i Trailing Stop Algoritmici
 
-# --- RECUPERO CHIAVI FISSE DAI SECRETS ---
-chiave_fissa_id = st.secrets.get("ALPACA_API_KEY_ID", "")
-chiave_fissa_secret = st.secrets.get("ALPACA_API_SECRET_KEY", "")
+# Costanti di Sistema Rigide (Addio Slider, Parametri Dinamici)
+MAX_SLOTS = 5
+RISK_PER_TRADE_USD = 10.0
+LOOKBACK_DAYS = 14
+ATR_MULTIPLIER = 1.5
 
-# --- GESTIONE MEMORIA STATO INTERRUTTORE ---
-def carica_config_stato():
-    if os.path.exists(CONFIG_FILE):
+# Lista Asset Unificata (Crypto, Azioni, ETF)
+ASSET_UNIVERSE = [
+    "BTC-USD", "ETH-USD", "SOL-USD",  # Crypto (Formato Yahoo Finance per storico)
+    "NVDA", "TSLA", "AAPL",            # Azioni
+    "QQQ", "SPY", "GLD"                # ETF / Oro
+]
+
+# Mapping per Alpaca (Rimuove il trattino per le crypto in esecuzione reale)
+def clean_ticker_for_alpaca(ticker):
+    return ticker.replace("-", "")
+
+# =====================================================================
+# 2. CONNESSIONE PROTETTA ALPACA
+# =====================================================================
+# Cerca le chiavi nei Secrets di Streamlit per evitare inserimenti manuali errati
+try:
+    ALPACA_API_KEY = st.secrets["ALPACA_API_KEY"]
+    ALPACA_SECRET_KEY = st.secrets["ALPACA_SECRET_KEY"]
+    ALPACA_PAPER = st.secrets.get("ALPACA_PAPER", True)
+    trading_client = TradingClient(ALPACA_API_KEY, ALPACA_SECRET_KEY, paper=ALPACA_PAPER)
+    api_connected = True
+except Exception as e:
+    api_connected = False
+
+# =====================================================================
+# 3. MOTORE MATEMATICO: ANALISI ADATTIVA 14 GIORNI (DAILY)
+# =====================================================================
+def analyze_market_dynamics(ticker):
+    """
+    Scarica lo storico daily a 14 periodi e calcola la struttura matematica:
+    ATR percentuale, Volume Medio, Volume Ratio e la EMA 9 di controllo.
+    """
+    try:
+        # Scarica 40 giorni per essere sicuro di calcolare correttamente le medie a 14 periodi
+        end_date = datetime.datetime.now()
+        start_date = end_date - datetime.timedelta(days=40)
+        df = yf.download(ticker, start=start_date, end=end_date, interval="1d", progress=False)
+        
+        if df.empty or len(df) < LOOKBACK_DAYS:
+            return None
+            
+        # Calcolo True Range (TR) e Average True Range (ATR)
+        high_low = df['High'] - df['Low']
+        high_close = np.abs(df['High'] - df['Close'].shift())
+        low_close = np.abs(df['Low'] - df['Close'].shift())
+        ranges = pd.concat([high_low, high_close, low_close], axis=1)
+        true_range = ranges.max(axis=1)
+        df['atr'] = true_range.rolling(window=LOOKBACK_DAYS).mean()
+        
+        # Struttura Dinamica %
+        df['atr_pct'] = (df['atr'] / df['Close']) * 100
+        df['vol_medio_14d'] = df['Volume'].rolling(window=LOOKBACK_DAYS).mean()
+        df['volume_ratio'] = df['Volume'] / df['vol_medio_14d']
+        df['ema_fast'] = df['Close'].ewm(span=9, adjust=False).mean()
+        
+        last_row = df.iloc[-1]
+        return {
+            "close": float(last_row['Close']),
+            "atr_pct": float(last_row['atr_pct']),
+            "volume_ratio": float(last_row['volume_ratio']),
+            "ema_fast": float(last_row['ema_fast'])
+        }
+    except Exception:
+        return None
+
+# =====================================================================
+# 4. LOGICA DEL COCKPIT: SELEZIONE MERITOCRATICA E SIZE ENGINERING
+# =====================================================================
+def scan_and_rank_signals():
+    """
+    Scansiona l'universo degli asset, estrae quelli con volumi insoliti
+    e crea la classifica meritocratica per gli slot disponibili.
+    """
+    signals = []
+    for asset in ASSET_UNIVERSE:
+        data = analyze_market_dynamics(asset)
+        if data is None:
+            continue
+            
+        # Segnale Tecnico Base: Se l'asset ha un Volume Ratio > 1.0 (Volume sopra la media dei 14gg)
+        # ed è in una fase di prezzo favorevole (es. sopra o vicino al supporto, qui simulato con Volume Ratio di spinta)
+        if data['volume_ratio'] > 1.0:
+            signals.append({
+                "ticker": asset,
+                "close": data['close'],
+                "atr_pct": data['atr_pct'],
+                "volume_ratio": data['volume_ratio'],
+                "ema_fast": data['ema_fast']
+            })
+            
+    # Classifica Meritocratica: Ordina per Volume Ratio Decrescente (Le mani forti più pesanti prima)
+    ranked_signals = sorted(signals, key=lambda x: x['volume_ratio'], reverse=True)
+    return ranked_signals
+
+def execute_buy_order(asset_data, open_slots):
+    """
+    Calcola la size dinamica in base all'ATR ed esegue l'acquisto su Alpaca.
+    Applica il protocollo Sonda se il sistema è in SCOUT_MODE.
+    """
+    ticker = asset_data['ticker']
+    prezzo_attuale = asset_data['close']
+    atr_pct = asset_data['atr_pct']
+    
+    # Calcolo Stop Loss Dinamico (Più l'asset oscilla, più si allarga il paracadute)
+    stop_loss_dist_pct = atr_pct * ATR_MULTIPLIER
+    
+    # Calcolo della Taglia (Size Engineering) per mantenere il rischio fisso a $10
+    size_in_quote = RISK_PER_TRADE_USD / (prezzo_attuale * (stop_loss_dist_pct / 100))
+    budget_usd = size_in_quote * prezzo_attuale
+    
+    # Applicazione Cautelare del Protocollo Sonda
+    current_mode = st.session_state.SYSTEM_STATE
+    if current_mode == "SCOUT_MODE":
+        size_in_quote = size_in_quote * 0.5
+        budget_usd = budget_usd * 0.5
+        
+    alpaca_ticker = clean_ticker_for_alpaca(ticker)
+    
+    # Esecuzione Ordine Reale su Alpaca Client
+    if api_connected:
         try:
-            with open(CONFIG_FILE, "r") as f: 
-                return json.load(f).get("auto_trading", False)
-        except: 
+            req = MarketOrderRequest(
+                symbol=alpaca_ticker,
+                qty=round(size_in_quote, 4) if "USD" in ticker else int(size_in_quote) if size_in_quote > 1 else 1,
+                side=OrderSide.BUY,
+                time_in_force=TimeInForce.GTC
+            )
+            trading_client.submit_order(order_data=req)
+            
+            # Registrazione nel tracciamento locale del Trailing Stop
+            st.session_state.TRACKED_POSITIONS[ticker] = {
+                "entry_price": prezzo_attuale,
+                "highest_price": prezzo_attuale,
+                "stop_price": prezzo_attuale * (1 - (stop_loss_dist_pct / 100)),
+                "size": size_in_quote,
+                "mode": current_mode,
+                "time": datetime.datetime.now().strftime("%H:%M:%S")
+            }
+            return True
+        except Exception as e:
+            st.error(f"Errore nell'invio ordine per {ticker}: {str(e)}")
             return False
     return False
 
-def salva_config_stato(stato):
-    try:
-        with open(CONFIG_FILE, "w") as f: 
-            json.dump({"auto_trading": stato}, f)
-    except: 
-        pass
-
-stato_precedente = carica_config_stato()
-
-# Barra laterale per le configurazioni e le chiavi
-st.sidebar.header("🔑 Configurazione API Alpaca")
-alpaca_key = st.sidebar.text_input("Alpaca API Key ID", value=chiave_fissa_id, type="password")
-alpaca_secret = st.sidebar.text_input("Alpaca API Secret Key", value=chiave_fissa_secret, type="password")
-trading_mode = st.sidebar.radio("Modalità Trading", ["Paper (Simulazione)", "Live (Reale)"])
-
-if trading_mode == "Live (Reale)": 
-    BASE_URL = "https://api.alpaca.markets"
-else: 
-    BASE_URL = "https://paper-api.alpaca.markets"
-
-# --- CONFIGURAZIONE SATELLITE TELEGRAM ---
-st.sidebar.markdown("---")
-st.sidebar.subheader("📱 Radar Notifiche Telegram")
-tg_token = st.sidebar.text_input("Telegram Bot Token", value="", type="password")
-tg_chat_id = st.sidebar.text_input("Telegram Chat ID", value="")
-
-def invia_notifica_telegram(messaggio):
-    if tg_token and tg_chat_id:
-        url = f"https://api.telegram.org/bot{tg_token}/sendMessage"
-        try:
-            requests.post(
-                url, 
-                json={"chat_id": tg_chat_id, "text": messaggio}, 
-                timeout=3
-            )
-        except:
-            pass
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("💰 Gestione Munizioni Base")
-size_dollari = st.sidebar.slider("Capitale Base per Trade ($)", min_value=5, max_value=500, value=50, step=5)
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("🛡️ Parametri Triple Shield (v45.0)")
-moltiplicatore_vol = st.sidebar.slider("Filtro Volumi (Soglia x Media)", min_value=1.1, max_value=2.5, value=1.5, step=0.1)
-moltiplicatore_atr_stop = st.sidebar.slider("Moltiplicatore ATR Stop Loss", min_value=1.5, max_value=4.0, value=2.5, step=0.1)
-trailing_distance = st.sidebar.slider("Distanza Fallback Trailing (% dal max)", min_value=0.5, max_value=5.0, value=1.0, step=0.1)
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("🏹 Strategia d'Ingresso")
-tipo_strategia = st.sidebar.selectbox("Condizione d'Acquisto", ["Ipervenduto Classico (RSI < 35)", "Inseguimento FOMO (RSI > 65)"])
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("🎛️ Pannello Armamenti")
-attiva_capitale = st.sidebar.toggle("🚀 ATTIVA TRADING AUTOMATICO", value=stato_precedente)
-salva_config_stato(attiva_capitale)
-
-# --- STRUTTURA MULTI-ASSET GLOBAL v45.0 ---
-EQUIPAGGIO = {
-    "👑 Crypto Blue-Chips Ufficiali (24/7)": ["BTC/USD", "ETH/USD", "SOL/USD"],
-    "🇺🇸 I Giganti di Wall Street (Azioni USA)": [
-        "AAPL", "TSLA", "NVDA", "AMZN", "MSFT", "GOOGL", "META", "NFLX", "AMD", "PLTR",
-        "SMCI", "MU", "AVGO", "COIN", "LLY", "JPM", "XOM", "COST", "DIS", "NKE"
-    ],
-    "📊 ETF Indici e Settori Chiave USA": ["SPY", "QQQ", "SOXX", "XLF"],
-    "📀 Metalli Preziosi (ETF Safe Haven)": ["GLD", "SLV"]
-}
-
-tutti_i_soldati = [coin for cat in EQUIPAGGIO.values() for coin in cat]
-
-def carica_storico_persistente():
-    if os.path.exists(CACHE_FILE):
-        try:
-            with open(CACHE_FILE, "r") as f: return json.load(f)
-        except: return []
-    return []
-
-def salva_storico_persistente(storico):
-    try:
-        with open(CACHE_FILE, "w") as f: json.dump(storico, f)
-    except: pass
-
-if "scatola_nera" not in st.session_state: st.session_state.scatola_nera = {}
-if "storico_profitti" not in st.session_state: st.session_state.storico_profitti = carica_storico_persistente()
-
-def calcola_rsi(prezzi, periodi=14):
-    if len(prezzi) < periodi + 1: return 50.0
-    variazioni = pd.Series(prezzi).diff()
-    guadagni = variazioni.clip(lower=0)
-    perdite = -variazioni.clip(upper=0)
-    media_guadagni = guadagni.ewm(span=periodi, adjust=False).mean()
-    media_perdite = perdite.ewm(span=periodi, adjust=False).mean()
-    rs = media_guadagni / media_perdite.replace(0, 0.00001)
-    return round((100 - (100 / (1 + rs))).iloc[-1], 2)
-
-def calcola_ema200(prezzi):
-    if len(prezzi) < 200: return None
-    return round(pd.Series(prezzi).ewm(span=200, adjust=False).mean().iloc[-1], 4)
-
-def ottieni_posizioni_reali(key, secret):
-    url = f"{BASE_URL}/v2/positions"
-    headers = {"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret}
-    try:
-        res = requests.get(url, headers=headers)
-        if res.status_code == 200:
-            return {p["symbol"]: {"qty": float(p["qty"]), "asset_id": p["asset_id"]} for p in res.json()}
-    except: pass
-    return {}
-
-def ottieni_bilancio_conto(key, secret):
-    url = f"{BASE_URL}/v2/account"
-    headers = {"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret}
-    try:
-        res = requests.get(url, headers=headers)
-        if res.status_code == 200:
-            dati = res.json()
-            return {"cash": round(float(dati["cash"]), 2), "portfolio_value": round(float(dati["portfolio_value"]), 2)}
-    except: pass
-    return {"cash": "0.0", "portfolio_value": "0.0"}
-
-def invia_ordine_market(simbolo, lato, quantita_o_dollari, is_qty, key, secret):
-    url_ordine = f"{BASE_URL}/v2/orders"
-    headers = {
-        "APCA-API-KEY-ID": key, 
-        "APCA-API-SECRET-KEY": secret, 
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "symbol": simbolo.replace("/", ""), 
-        "side": lato, 
-        "type": "market", 
-        "time_in_force": "gtc"
-    }
-    if is_qty: 
-        payload["qty"] = str(quantita_o_dollari)
-    else: 
-        payload["notional"] = str(quantita_o_dollari)
-    try:
-        res = requests.post(url_ordine, json=payload, headers=headers)
-        return res.status_code == 200 or res.status_code == 201
-    except: return False
-
-def scarica_dati_globali_batch():
-    mappa_prezzi = {}
-    ticker_mapping = {}
-    for s in tutti_i_soldati:
-        yf_ticker = s.replace("/", "-") if "/USD" in s else s
-        ticker_mapping[yf_ticker] = s
-    tickers_list = list(ticker_mapping.keys())
-    try:
-        df_global_5m = yf.download(" ".join(tickers_list), period="5d", interval="5m", progress=False)
-        df_global_1h = yf.download(" ".join(tickers_list), period="60d", interval="1h", progress=False)
-        for yf_tick, orig_tick in ticker_mapping.items():
-            try:
-                if len(tickers_list) == 1:
-                    df_tick = df_global_5m.dropna()
-                    df_tick_1h = df_global_1h.dropna()
-                else:
-                    df_tick = pd.DataFrame({
-                        "Close": df_global_5m["Close"][yf_tick], "High": df_global_5m["High"][yf_tick],
-                        "Low": df_global_5m["Low"][yf_tick], "Volume": df_global_5m["Volume"][yf_tick]
-                    }).dropna()
-                    df_tick_1h = pd.DataFrame({"Close": df_global_1h["Close"][yf_tick]}).dropna()
-                if not df_tick.empty and "Close" in df_tick:
-                    chiusure = df_tick["Close"].tolist()
-                    volumi = df_tick["Volume"].tolist()
-                    high = df_tick["High"]
-                    low = df_tick["Low"]
-                    close_prev = df_tick["Close"].shift(1)
-                    tr = pd.concat([high - low, (high - close_prev).abs(), (low - close_prev).abs()], axis=1).max(axis=1)
-                    atr_val = tr.rolling(14).mean().iloc[-1] if len(tr) >= 14 else 0
-                    ema200_1h = None
-                    if not df_tick_1h.empty and len(df_tick_1h) >= 200:
-                        ema200_1h = calcola_ema200(df_tick_1h["Close"].tolist())
-                    vol_attuale = volumi[-1] if len(volumi) > 0 else 0
-                    media_vol_20 = pd.Series(volumi).rolling(20).mean().iloc[-1] if len(volumi) >= 20 else 1
-                    volume_valido = vol_attuale >= (media_vol_20 * moltiplicatore_vol)
-                    mappa_prezzi[orig_tick] = {
-                        "prezzo": round(chiusure[-1], 4) if chiusure[-1] < 1 else round(chiusure[-1], 2),
-                        "rsi": calcola_rsi(chiusure), "ema200_1h": ema200_1h, "vol_attuale": vol_attuale,
-                        "media_vol_20": round(media_vol_20, 2), "volume_valido": volume_valido, "atr": atr_val
-                    }
-                else:
-                    mappa_prezzi[orig_tick] = {"prezzo": "Senza Feed", "rsi": "--", "ema200_1h": None, "volume_valido": False, "atr": 0, "vol_attuale": 0, "media_vol_20": 1}
-            except:
-                mappa_prezzi[orig_tick] = {"prezzo": "Errore Elab.", "rsi": "--", "ema200_1h": None, "volume_valido": False, "atr": 0, "vol_attuale": 0, "media_vol_20": 1}
-    except:
-        for s in tutti_i_soldati:
-            mappa_prezzi[s] = {"prezzo": "Offline Radar", "rsi": "--", "ema200_1h": None, "volume_valido": False, "atr": 0, "vol_attuale": 0, "media_vol_20": 1}
-    return mappa_prezzi
-
-# --- FUNZIONE DI TRADING ULTRA-PIATTA (ANTI-TRONCAMENTO) ---
-def gestisci_trading_asset(coin, coin_clean, dati_c, pos_reali):
-    ultimo_prezzo = dati_c["prezzo"]
-    rsi_attuale = dati_c["rsi"]
-    ema200_1h_attuale = dati_c["ema200_1h"]
-    volume_valido_attuale = dati_c["volume_valido"]
-    atr_attuale = dati_c["atr"]
+# =====================================================================
+# 5. PROTEZIONE TEMPESTA & TRAILING STOP ATTIVO
+# =====================================================================
+def monitor_active_positions():
+    """
+    Monitora secondo per secondo le posizioni aperte.
+    Aggiorna i Trailing Stop e se rileva un cross di stop-loss attiva il Fusibile della Tempesta.
+    """
+    tickers_to_remove = []
     
-    if not isinstance(ultimo_prezzo, (int, float)):
-        return "Senza Feed"
+    for ticker, pos in list(st.session_state.TRACKED_POSITIONS.items()):
+        # Prende l'ultimo prezzo aggiornato
+        market_data = analyze_market_dynamics(ticker)
+        if market_data is None:
+            continue
+            
+        current_price = market_data['close']
         
-    ha_posizione_reale = coin_clean in pos_reali or coin in pos_reali
-    blocco_acquisto = ha_posizione_reale or (coin in st.session_state.scatola_nera)
-    trend_macro_rialzista = True if (ema200_1h_attuale is None or ultimo_prezzo > ema200_1h_attuale) else False
-    
-    if atr_attuale > 0:
-        atr_pct = (atr_attuale / ultimo_prezzo) * 100
-        moltiplicatore_volatilità = 0.35 / max(atr_pct, 0.02)
-        moltiplicatore_volatilità = max(0.4, min(moltiplicatore_volatilità, 1.8))
-        size_ottimizzata = round(size_dollari * moltiplicatore_volatilità, 2)
-    else:
-        size_ottimizzata = size_dollari
-        
-    if not attiva_capitale:
-        return f"📦 {round((((ultimo_prezzo - st.session_state.scatola_nera[coin]['prezzo_acquisto'])/st.session_state.scatola_nera[coin]['prezzo_acquisto'])*100),2)}%" if (coin in st.session_state.scatola_nera and ha_posizione_reale) else ("📦 In Posizione" if ha_posizione_reale else "🛰️ In Caccia")
+        # Aggiornamento della vetta (Trailing Stop)
+        if current_price > pos['highest_price']:
+            st.session_state.TRACKED_POSITIONS[ticker]['highest_price'] = current_price
+            # Trascina lo stop loss verso l'alto mantenendo la distanza calcolata all'inizio
+            dist_pct = ((pos['entry_price'] - pos['stop_price']) / pos['entry_price'])
+            st.session_state.TRACKED_POSITIONS[ticker]['stop_price'] = current_price * (1 - dist_pct)
+            
+        # Controllo della violazione dello Stop Loss (Preso in Caduta)
+        if current_price <= pos['stop_price']:
+            # Esecuzione Ordine di Vendita su Alpaca
+            alpaca_ticker = clean_ticker_for_alpaca(ticker)
+            if api_connected:
+                try:
+                    req = MarketOrderRequest(
+                        symbol=alpaca_ticker,
+                        qty=pos['size'],
+                        side=OrderSide.SELL,
+                        time_in_force=TimeInForce.GTC
+                    )
+                    trading_client.submit_order(order_data=req)
+                except Exception:
+                    pass
+            
+            # Calcolo profitto/perdita dell'operazione chiusa
+            pnl_pct = ((current_price - pos['entry_price']) / pos['entry_price']) * 100
+            pnl_usd = (current_price - pos['entry_price']) * pos['size']
+            
+            st.session_state.TOTAL_PROFIT_USD += pnl_usd
+            st.session_state.LOG_TRADES.append({
+                "Orario": datetime.datetime.now().strftime("%H:%M:%S"),
+                "Asset": ticker,
+                "Profitto %": f"{pnl_pct:+.2f}%",
+                "Profitto USD": f"${pnl_usd:+.2f}",
+                "Tipo Chiusura": "TRAILING STOP" if pnl_pct > 0 else "STOP LOSS LOSS"
+            })
+            
+            # SE LO STOP HA GENERATO UNA PERDITA -> ATTIVA IL FUSIBILE DELLA TEMPESTA
+            if pnl_pct < 0:
+                st.session_state.SYSTEM_STATE = "STORM_LOCK"
+                st.session_state.STORM_TRIGGER_TICKER = ticker
+                
+            # Se il trade sonda ha avuto successo (chiuso in profitto), disattiva lo stato sonda
+            if pos['mode'] == "SCOUT_MODE" and pnl_pct > 0:
+                st.session_state.SYSTEM_STATE = "NORMAL"
+                st.session_state.STORM_TRIGGER_TICKER = None
+                
+            tickers_to_remove.append(ticker)
+            
+    for t in tickers_to_remove:
+        if t in st.session_state.TRACKED_POSITIONS:
+            del st.session_state.TRACKED_POSITIONS[t]
 
-    # Modulo Ingressi
-    condizione_rsi = (rsi_attuale < 35) if "Ipervenduto" in tipo_strategia else (rsi_attuale > 65)
-    if condizione_rsi and trend_macro_rialzista and volume_valido_attuale and not blocco_acquisto:
-        if invia_ordine_market(coin, "buy", size_ottimizzata, False, alpaca_key, alpaca_secret):
-            stop_loss_iniziale_atr = ultimo_prezzo - (moltiplicatore_atr_stop * atr_attuale) if atr_attuale > 0 else ultimo_prezzo * 0.97
-            st.session_state.scatola_nera[coin] = {
-                "prezzo_acquisto": ultimo_prezzo, "prezzo_massimo": ultimo_prezzo, 
-                "stop_loss_atr": round(stop_loss_iniziale_atr, 4), "size_effettiva": size_ottimizzata,
-                "venduto_parziale": False, "break_even_attivo": False
-            }
-            invia_notifica_telegram(f"🛒 BUY: {coin} @ ${ultimo_prezzo}")
-            st.toast(f"🛒 Acquistato {coin}", icon="🟢")
+def check_storm_clearance():
+    """
+    Rilevatore Intelligente di Cielo Sereno.
+    Se l'asset che ha innescato il crash chiude sopra la sua EMA 9 Daily, la tempesta è finita.
+    """
+    if st.session_state.SYSTEM_STATE == "STORM_LOCK" and st.session_state.STORM_TRIGGER_TICKER:
+        ticker = st.session_state.STORM_TRIGGER_TICKER
+        data = analyze_market_dynamics(ticker)
+        if data:
+            if data['close'] > data['ema_fast']:
+                st.session_state.SYSTEM_STATE = "SCOUT_MODE" # Passa al modulo di test leggero
 
-    if not ha_posizione_reale:
-        return "🛰️ In Caccia"
+# =====================================================================
+# 6. INTERFACCIA UTENTE E DASHBOARD
+# =====================================================================
+# Header Principale
+st.title("🛡️ CORAZZATA AUTONOMA ADATTIVA v46.0")
+st.subheader("Architettura Quantistica di Protezione e Scalping Volumetrico")
+st.markdown("---")
 
-    if coin not in st.session_state.scatola_nera:
-        stop_loss_iniziale_atr = ultimo_prezzo - (moltiplicatore_atr_stop * atr_attuale) if atr_attuale > 0 else ultimo_prezzo * 0.97
-        st.session_state.scatola_nera[coin] = {
-            "prezzo_acquisto": ultimo_prezzo, "prezzo_massimo": ultimo_prezzo, 
-            "stop_loss_atr": round(stop_loss_iniziale_atr, 4), "size_effettiva": size_dollari,
-            "venduto_parziale": False, "break_even_attivo": False
-        }
-    
-    dati_pos = st.session_state.scatola_nera[coin]
-    if ultimo_prezzo > dati_pos.get("prezzo_massimo", ultimo_prezzo):
-        st.session_state.scatola_nera[coin]["prezzo_massimo"] = ultimo_prezzo
-        dati_pos["prezzo_massimo"] = ultimo_prezzo
-        
-    guadagno_pct = ((ultimo_prezzo - dati_pos["prezzo_acquisto"]) / dati_pos["prezzo_acquisto"]) * 100
-    qty_rimanente = pos_reali.get(coin_clean, pos_reali.get(coin, {})).get("qty", 0)
-    
-    if qty_rimanente <= 0:
-        return "🛰️ In Caccia"
-
-    # 1. SCUDO ATR STOP LOSS
-    if ultimo_prezzo <= dati_pos.get("stop_loss_atr", 0):
-        if invia_ordine_market(coin, "sell", qty_rimanente, True, alpaca_key, alpaca_secret):
-            cap_imp = dati_pos.get("size_effettiva", size_dollari)
-            bot_dol = round((cap_imp * (guadagno_pct / 100)), 2)
-            st.session_state.storico_profitti.append({"Ora": datetime.now().strftime('%H:%M:%S'), "Asset": coin, "Perf %": f"{round(guadagno_pct, 2)}% [ATR STOP]", "Gain ($)": bot_dol})
-            salva_storico_persistente(st.session_state.storico_profitti)
-            invia_notifica_telegram(f"🚨 ATR STOP su {coin}")
-            del st.session_state.scatola_nera[coin]
-            return "💥 ATR Stop"
-
-    # 2. TAKE PROFIT PARZIALE (50%)
-    if guadagno_pct >= 1.5 and not dati_pos.get("venduto_parziale", False):
-        qty_da_vendere = round(qty_rimanente / 2, 4)
-        if invia_ordine_market(coin, "sell", qty_da_vendere, True, alpaca_key, alpaca_secret):
-            st.session_state.scatola_nera[coin]["venduto_parziale"] = True
-            st.session_state.scatola_nera[coin]["break_even_attivo"] = True
-            cap_parz = dati_pos.get("size_effettiva", size_dollari) / 2
-            bot_parz = round((cap_parz * (guadagno_pct / 100)), 2)
-            st.session_state.storico_profitti.append({"Ora": datetime.now().strftime('%H:%M:%S'), "Asset": coin, "Perf %": f"+{round(guadagno_pct, 2)}% [TP 50%]", "Gain ($)": bot_parz})
-            salva_storico_persistente(st.session_state.storico_profitti)
-            invia_notifica_telegram(f"✅ TP PARZIALE su {coin}")
-            st.toast(f"Venduto 50% di {coin}", icon="🛡️")
-
-    # 3. PROTEZIONE BREAK-EVEN
-    if dati_pos.get("break_even_attivo", False) and ultimo_prezzo <= dati_pos["prezzo_acquisto"]:
-        if invia_ordine_market(coin, "sell", qty_rimanente, True, alpaca_key, alpaca_secret):
-            st.session_state.storico_profitti.append({"Ora": datetime.now().strftime('%H:%M:%S'), "Asset": coin, "Perf %": "0.0% [BREAK-EVEN]", "Gain ($)": 0.0})
-            salva_storico_persistente(st.session_state.storico_profitti)
-            invia_notifica_telegram(f"🛡️ BREAK-EVEN su {coin}")
-            del st.session_state.scatola_nera[coin]
-            return "🛡️ Break-Even"
-
-    # 4. TRAILING STOP DINAMICO
-    stop_dinamico = dati_pos["prezzo_massimo"] - (2 * atr_attuale) if atr_attuale > 0 else dati_pos["prezzo_massimo"] * (1 - (trailing_distance/100))
-    if ultimo_prezzo <= stop_dinamico:
-        if invia_ordine_market(coin, "sell", qty_rimanente, True, alpaca_key, alpaca_secret):
-            cap_imp = dati_pos.get("size_effettiva", size_dollari)
-            if dati_pos.get("venduto_parziale", False): cap_imp = cap_imp / 2
-            bot_dol = round((cap_imp * (guadagno_pct / 100)), 2)
-            st.session_state.storico_profitti.append({"Ora": datetime.now().strftime('%H:%M:%S'), "Asset": coin, "Perf %": f"{round(guadagno_pct, 2)}% [TRAILING]", "Gain ($)": bot_dol})
-            salva_storico_persistente(st.session_state.storico_profitti)
-            invia_notifica_telegram(f"💥 TRAILING STOP su {coin}")
-            del st.session_state.scatola_nera[coin]
-            return "💥 Chiuso ATR"
-
-    return f"📦 {round(guadagno_pct, 2)}%"
-
-# --- INTERFACCIA UTENTE ---
-st.markdown("## 🛰️ Quant Agent Global Terminal v45.0 • Triple Shield Architecture")
-
-if attiva_capitale:
-    st.error("🚨 **SISTEMA TRADING ARMATO E ATTIVO**: Scansione volumetrica 3-Tier in esecuzione.")
+# Sezione Stato Connessione API
+if not api_connected:
+    st.error("⚠️ Chiavi Alpaca API mancanti o errate nel file secrets.toml. Il bot girerà in modalità Simulazione Totale.")
 else:
-    st.info("🛡️ **MODALITÀ VEDETTA IN SICUREZZA**: Analisi di mercato in tempo reale senza invio ordini.")
+    st.success("⚡ Connessione ad Alpaca Trading API stabilita con Successo. Sistemi di fuoco Armati.")
 
-# Pulsanti di sicurezza sidebar
-st.sidebar.markdown("---")
-st.sidebar.subheader("🚨 Protocollo Difesa")
-if st.sidebar.button("💥 PANIC BUTTON MANUALE"):
-    posizioni_attuali = ottieni_posizioni_reali(alpaca_key, alpaca_secret)
-    for simbolo_clean, dati in posizioni_attuali.items():
-        invia_ordine_market(simbolo_clean, "sell", dati["qty"], True, alpaca_key, alpaca_secret)
-    st.session_state.scatola_nera = {}
-    invia_notifica_telegram("⚠️ PROTOCOLLO LIQUIDAZIONE TOTALE ATTIVATO MANUALE!")
-    st.toast("Impero interamente liquidato!", icon="🔥")
-    time.sleep(0.5)
-    st.rerun()
-
-if st.sidebar.button("🔄 Reset Dati Sessione"):
-    st.session_state.scatola_nera = {}
-    st.session_state.storico_profitti = []
-    if os.path.exists(CACHE_FILE): os.remove(CACHE_FILE)
-    if os.path.exists(CONFIG_FILE): os.remove(CONFIG_FILE)
-    st.toast("Tabula Rasa Effettuata!", icon="🧼")
-    time.sleep(0.5)
-    st.rerun()
-
-info_conto = ottieni_bilancio_conto(alpaca_key, alpaca_secret)
-pos_reali = ottieni_posizioni_reali(alpaca_key, alpaca_secret)
-totale_guadagnato = sum([t["Gain ($)"] for t in st.session_state.storico_profitti])
-
-c1, c2, c3 = st.columns(3)
-with c1: st.metric("💰 Cash Disponibile", f"$ {info_conto['cash']}")
-with c2: st.metric("🛡️ Capitale Corazzata", f"$ {info_conto['portfolio_value']}")
-with c3: st.metric("💵 CASSA PROFITTI GLOBAL", f"$ {round(totale_guadagnato, 2)}", delta="Filtri Volumetrici Attivi")
+# Layout a Colonne per i Dati di Sintesi della Cassa
+col1, col2, col3, col4 = st.columns(4)
+with col1:
+    st.metric("CASSA PROFITTI GLOBAL", f"${st.session_state.TOTAL_PROFIT_USD:+.2f}")
+with col2:
+    stato_attuale = st.session_state.SYSTEM_STATE
+    if stato_attuale == "NORMAL":
+        st.metric("STATO DEL SISTEMA", "🌤️ NORMALE / CACCIA")
+    elif stato_attuale == "STORM_LOCK":
+        st.metric("STATO DEL SISTEMA", f"🌪️ TEMPESTA ({st.session_state.STORM_TRIGGER_TICKER})", delta="BLOCCO ACQUISTI", delta_color="inverse")
+    elif stato_attuale == "SCOUT_MODE":
+        st.metric("STATO DEL SISTEMA", "🏹 MODULO SONDA", delta="SIZE DIMEZZATA")
+with col3:
+    occupati = len(st.session_state.TRACKED_POSITIONS)
+    st.metric("SLOT OCCUPATI HANGAR", f"{occupati} / {MAX_SLOTS}")
+with col4:
+    win_trades = [t for t in st.session_state.LOG_TRADES if "-" not in t['Profitto %']]
+    total_trades = len(st.session_state.LOG_TRADES)
+    wr = (len(win_trades) / total_trades * 100) if total_trades > 0 else 0.0
+    st.metric("WIN RATE SESSIONE", f"{wr:.1f}%", f"{total_trades} Operazioni Totali")
 
 st.markdown("---")
-vincenti = sum(1 for t in st.session_state.storico_profitti if float(t.get("Gain ($)", 0.0)) > 0)
-pareggi = sum(1 for t in st.session_state.storico_profitti if "[BREAK-EVEN]" in str(t.get("Perf %", "")))
-stop_loss = sum(1 for t in st.session_state.storico_profitti if "[ATR STOP]" in str(t.get("Perf %", "")) or "[HARD STOP]" in str(t.get("Perf %", "")))
 
-bg_c1, bg_c2 = st.columns([1, 2])
-with bg_c1:
-    st.markdown(f"#### 📊 Contatore dei Vittorie\n🔥 **{vincenti}** Vincenti  |  🤝 **{pareggi}** Pareggi (BE)  |  🚨 **{stop_loss}** Stop Loss")
+# PANNELLO DI CONTROLLO MACRO
+st.sidebar.title("🎛️ Pannello di Controllo")
+btn_start = st.sidebar.button("🚀 ATTIVA ALGORITMO ADATTIVO", use_container_width=True)
+btn_stop = st.sidebar.button("🛑 SPEGNI MOTORI", use_container_width=True)
 
-with bg_c2:
-    trade_vincenti_lista = [t for t in st.session_state.storico_profitti if float(t.get("Gain ($)", 0.0)) > 0]
-    if trade_vincenti_lista:
-        miglior_colpo = max(trade_vincenti_lista, key=lambda x: float(x.get("Gain ($)", 0.0)))
-        st.markdown(f"#### 🥇 Top Gun della Sessione\n🚀 Miglior Colpo: **{miglior_colpo['Asset']}** | Bottino: **+${miglior_colpo['Gain ($)']}**")
-    else:
-        st.markdown("#### 🥇 Top Gun della Sessione\n🛰️ In attesa del primo bersaglio conforme ai 3 Schermi.")
+if btn_start:
+    st.session_state.BOT_RUNNING = True
+if btn_stop:
+    st.session_state.BOT_RUNNING = False
 
-if trade_vincenti_lista:
-    with st.expander("🏆 HALL OF FAME DEI PROFITTI", expanded=True):
-        st.dataframe(pd.DataFrame(trade_vincenti_lista), use_container_width=True, hide_index=True)
-st.markdown("---")
-
-dati_mercato_freschi = scarica_dati_globali_batch()
-tabella_finale_mappa = {}
-
-for coin in tutti_i_soldati:
-    coin_clean = coin.replace("/", "")
-    dati_c = dati_mercato_freschi.get(coin, {"prezzo": "Errore", "rsi": "--", "ema200_1h": None, "volume_valido": False, "atr": 0, "vol_attuale": 0, "media_vol_20": 1})
+# LOOP DI ESECUZIONE CONTINUA INTERNA
+if st.session_state.BOT_RUNNING:
+    st.sidebar.info("🤖 L'automa è attivo e sta scansionando i 14 giorni storici...")
     
-    # Esecuzione del Trading ed Estrazione dello Stato Unificato
-    stato_operativo = gestisci_trading_asset(coin, coin_clean, dati_c, pos_reali)
+    # 1. Monitoraggio posizioni aperte e aggiornamento dei Trailing stop
+    monitor_active_positions()
     
-    ultimo_prezzo = dati_c["prezzo"]
-    ema200_1h_attuale = dati_c["ema200_1h"]
-    trend_macro_rialzista = True if (isinstance(ultimo_prezzo, (int, float)) and (ema200_1h_attuale is None or ultimo_prezzo > ema200_1h_attuale)) else False
-    trend_macro_str = "🟢 Rialzista (1H)" if trend_macro_rialzista else "🔴 Ribassista (1H)"
-    vol_str = "🔥 PICCO" if dati_c["volume_valido"] else "💤 Normale"
+    # 2. Controllo sblocco della tempesta
+    if st.session_state.SYSTEM_STATE == "STORM_LOCK":
+        check_storm_clearance()
+        
+    # 3. Controllo degli acquisti se ci sono slot liberi e non siamo in blocco totale
+    slots_occupati = len(st.session_state.TRACKED_POSITIONS)
+    slots_liberi = MAX_SLOTS - slots_occupati
     
-    tabella_finale_mappa[coin] = {
-        "Prezzo": ultimo_prezzo, "RSI": dati_c["rsi"], "Macro Trend": trend_macro_str, 
-        "Volumi 5m": vol_str, "Stato": stato_operativo
-    }
+    if slots_liberi > 0 and st.session_state.SYSTEM_STATE != "STORM_LOCK":
+        # Scansione e ordinamento meritocratico sui volumi
+        segnali_rilevati = scan_and_rank_signals()
+        # Filtra e seleziona i migliori in base agli slot liberi disponibili
+        asset_da_comprare = segnali_rilevati[:slots_liberi]
+        
+        for asset in asset_da_comprare:
+            # Controlla che l'asset non sia già in portafoglio
+            if asset['ticker'] not in st.session_state.TRACKED_POSITIONS:
+                execute_buy_order(asset, slots_liberi)
+                
+    # Piccola pausa tecnica per non sovraccaricare le chiamate API
+    time.sleep(1)
+    st.rerun()
+else:
+    st.sidebar.warning("💤 Sistemi spenti. Il Bot è in modalità vedetta passiva.")
 
-for categoria, monete in EQUIPAGGIO.items():
-    st.markdown(f"### {categoria}")
-    righe_cat = []
-    for coin in monete:
-        d = tabella_finale_mappa.get(coin, {"Prezzo": "--", "RSI": "--", "Macro Trend": "--", "Volumi 5m": "--", "Stato": "--"})
-        p_val = d["Prezzo"]
-        if isinstance(p_val, (int, float)):
-            p_str = f"$ {p_val:,.4f}" if p_val < 1 else f"$ {p_val:,.2f}"
-        else: 
-            p_str = str(p_val)
-        rsi_str = f"{d['RSI']:.2f}" if isinstance(d['RSI'], (int, float)) else str(d['RSI'])
-        righe_cat.append({
-            "Asset": str(coin), "Prezzo": str(p_str), "RSI (5m)": str(rsi_str), 
-            "Filtro 1 (Trend 1H)": str(d["Macro Trend"]), "Filtro 2 (Volumi)": str(d["Volumi 5m"]), 
-            "Stato Operativo": str(d["Stato"])
+# =====================================================================
+# 7. VISUALIZZAZIONE TABELLONE DI BORDO (STILE v45.0 ENHANCED)
+# =====================================================================
+st.subheader("⚔️ L'Hangar delle Posizioni Attive (Massimo 5 Slot)")
+if len(st.session_state.TRACKED_POSITIONS) > 0:
+    pos_data = []
+    for k, v in st.session_state.TRACKED_POSITIONS.items():
+        pos_data.append({
+            "Asset": k,
+            "Prezzo Ingresso": f"${v['entry_price']:.2f}",
+            "Picco Massimo Registrato": f"${v['highest_price']:.2f}",
+            "Stop Loss Dinamico (Prezzo)": f"${v['stop_price']:.2f}",
+            "Taglia Allocata": f"{v['size']:.5f}",
+            "Modalità Ingresso": v['mode'],
+            "Orario Apertura": v['time']
         })
-    st.dataframe(pd.DataFrame(righe_cat), use_container_width=True, hide_index=True)
+    st.table(pd.DataFrame(pos_data))
+else:
+    st.info("Nessun caccia nell'hangar. Il bot sta scansionando i volumi per trovare ingressi istituzionali istituzionali.")
 
-st.caption(f"Architettura Triple Shield v45.0 online. Log Sincronizzazione: {datetime.now().strftime('%H:%M:%S')}")
-time.sleep(10)
-st.rerun()
+# DIARIO DI BORDO DI FINE GIORNATA (Richiesto: Report Pulito e Strutturato)
+st.markdown("---")
+with st.expander("📋 DIARIO DI BORDO GENERALE & REPORT DI FINE GIORNATA", expanded=True):
+    if len(st.session_state.LOG_TRADES) > 0:
+        st.dataframe(pd.DataFrame(st.session_state.LOG_TRADES), use_container_width=True)
+    else:
+        st.text("Nessun report compilato per oggi. Il bot invierà il bilancio totale alla chiusura delle sessioni.")
