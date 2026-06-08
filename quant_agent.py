@@ -8,7 +8,7 @@ import yfinance as yf
 from datetime import datetime, timedelta, timezone
 
 # Configurazione iniziale della pagina
-st.set_page_config(page_title="Quant Agent Global v44.0", layout="wide")
+st.set_page_config(page_title="Quant Agent Global v44.1", layout="wide")
 
 CACHE_FILE = "storico_profitti_cache.json"
 CONFIG_FILE = "config_fortezza.json"
@@ -79,7 +79,7 @@ st.sidebar.subheader("🎛️ Pannello Armamenti")
 attiva_capitale = st.sidebar.toggle("🚀 ATTIVA TRADING AUTOMATICO", value=stato_precedente)
 salva_config_stato(attiva_capitale)
 
-# --- STRUTTURA MULTI-ASSET GLOBAL v44.0 ---
+# --- STRUTTURA MULTI-ASSET GLOBAL v44.1 ---
 EQUIPAGGIO = {
     "👑 Crypto Blue-Chips Ufficiali (24/7)": ["BTC/USD", "ETH/USD", "SOL/USD"],
     "🇺🇸 I Giganti di Wall Street (Azioni USA)": [
@@ -155,12 +155,11 @@ def invia_ordine_market(simbolo, lato, quantita_o_dollari, is_qty, key, secret):
         return res.status_code == 200 or res.status_code == 201
     except: return False
 
-# --- 🔥 NUOVO MOTORE DI SCANSIONE IBRIDO (YAHOO FINANCE RADAR) ---
+# --- MOTORE DI SCANSIONE IBRIDO (YAHOO FINANCE RADAR) ---
 def scarica_dati_globali_batch(key, secret):
     mappa_prezzi = {}
     ticker_mapping = {}
     
-    # Mappiamo i ticker per renderli digeribili da Yahoo Finance (es. BTC/USD -> BTC-USD)
     for s in tutti_i_soldati:
         yf_ticker = s.replace("/", "-") if "/USD" in s else s
         ticker_mapping[yf_ticker] = s
@@ -168,7 +167,6 @@ def scarica_dati_globali_batch(key, secret):
     tickers_list = list(ticker_mapping.keys())
     
     try:
-        # Scarichiamo timeframes a 5 minuti degli ultimi 5 giorni (copre l'EMA200 in modo ottimale)
         df_global = yf.download(" ".join(tickers_list), period="5d", interval="5m", progress=False)
         
         for yf_tick, orig_tick in ticker_mapping.items():
@@ -188,7 +186,6 @@ def scarica_dati_globali_batch(key, secret):
                     low = df_tick["Low"]
                     close_prev = df_tick["Close"].shift(1)
                     
-                    # Calcolo ATR standard
                     tr = pd.concat([high - low, (high - close_prev).abs(), (low - close_prev).abs()], axis=1).max(axis=1)
                     atr_val = tr.rolling(14).mean().iloc[-1] if len(tr) >= 14 else 0
                     
@@ -209,7 +206,7 @@ def scarica_dati_globali_batch(key, secret):
     return mappa_prezzi
 
 # --- INTERFACCIA UTENTE ---
-st.markdown("## 🛰️ Quant Agent Global Terminal v44.0 • Hybrid Radar Engine")
+st.markdown("## 🛰️ Quant Agent Global Terminal v44.1 • Safe Lock Engine")
 
 if attiva_capitale:
     st.error("🚨 **IMPERIO ARMATO ATTIVO**: Monitoraggio feed satellitari e protezione acquisti multilivello in esecuzione.")
@@ -248,7 +245,7 @@ with c1: st.metric("💰 Cash Disponibile", f"$ {info_conto['cash']}")
 with c2: st.metric("🛡️ Capitale Corazzata", f"$ {info_conto['portfolio_value']}")
 with c3: st.metric("💵 CASSA PROFITTI GLOBAL", f"$ {round(totale_guadagnato, 2)}", delta="Sincronizzazione 3-Tier Attiva")
 
-# --- 🏆 BACHECA DELLA GIOIA TATTICA ---
+# --- BACHECA DELLA GIOIA TATTICA ---
 st.markdown("---")
 vincenti = sum(1 for t in st.session_state.storico_profitti if float(t.get("Gain ($)", 0.0)) > 0)
 pareggi = sum(1 for t in st.session_state.storico_profitti if "[BREAK-EVEN]" in str(t.get("Perf %", "")))
@@ -288,9 +285,10 @@ for coin in tutti_i_soldati:
     if isinstance(ultimo_prezzo, (int, float)):
         ha_posizione_reale = coin_clean in pos_reali or coin in pos_reali
         
-        if not ha_posizione_reale and coin in st.session_state.scatola_nera:
-            del st.session_state.scatola_nera[coin]
-            
+        # --- BLINDATURA COERENZA v44.1 ---
+        # Abbiamo rimosso la cancellazione della scatola_nera basata sul ritardo di Alpaca.
+        # Adesso il blocco acquisti rimane attivo finché la scatola nera o Alpaca non confermano la chiusura.
+        
         trend_rialzista = True if (ema200_attuale is None or ultimo_prezzo > ema200_attuale) else False
         
         if atr_attuale > 0:
@@ -471,6 +469,6 @@ if st.session_state.storico_profitti:
     st.subheader("📋 Registro Completo di Sessione (Storico Generale)")
     st.dataframe(pd.DataFrame(st.session_state.storico_profitti), use_container_width=True)
 
-st.caption(f"Fortezza Hyperdrive v44.0 online. Log Orario: {datetime.now().strftime('%H:%M:%S')}")
+st.caption(f"Fortezza Safe Lock v44.1 online. Log Orario: {datetime.now().strftime('%H:%M:%S')}")
 time.sleep(10)
 st.rerun()
