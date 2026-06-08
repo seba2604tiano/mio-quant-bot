@@ -34,11 +34,21 @@ LOOKBACK_DAYS = 14
 ATR_MULTIPLIER = 1.5
 
 # Lista Asset Unificata (Crypto, Azioni, ETF)
-ASSET_UNIVERSE = [
-    "BTC-USD", "ETH-USD", "SOL-USD",  # Crypto (Formato Yahoo Finance per storico)
-    "NVDA", "TSLA", "AAPL",            # Azioni
-    "QQQ", "SPY", "GLD"                # ETF / Oro
+
+    ASSET_UNIVERSE = [
+    # 🌟 CRIPTOVALUTE (Attive 24/7)
+    "BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "XRP-USD", "ADA-USD", "LINK-USD",
+    
+    # 🏎️ TECNOLOGIA & MOMENTUM (I campioni di Wall Street)
+    "NVDA", "TSLA", "AAPL", "MSFT", "AMZN", "META", "GOOGL", "NFLX", "AMD",
+    
+    # 🔋 TITOLI COMPORTAMENTALI & AI (Alta volatilità)
+    "PLTR", "COIN", "MARA", "SMCI", "BABA",
+    
+    # 🛡️ ETF & MATERIE PRIME (Coperture macro)
+    "SPY", "QQQ", "IWM", "DIA", "GLD", "SLV", "USO", "SMH", "ARKK"
 ]
+
 
 # Mapping per Alpaca (Rimuove il trattino per le crypto in esecuzione reale)
 def clean_ticker_for_alpaca(ticker):
