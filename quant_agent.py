@@ -20,14 +20,18 @@ chiave_fissa_secret = st.secrets.get("ALPACA_API_SECRET_KEY", "")
 def carica_config_stato():
     if os.path.exists(CONFIG_FILE):
         try:
-            with open(CONFIG_FILE, "r") as f: return json.load(f).get("auto_trading", False)
-        except: return False
+            with open(CONFIG_FILE, "r") as f: 
+                return json.load(f).get("auto_trading", False)
+        except: 
+            return False
     return False
 
 def salva_config_stato(stato):
     try:
-        with open(CONFIG_FILE, "w") as f: json.dump({"auto_trading": stato}, f)
-    except: pass
+        with open(CONFIG_FILE, "w") as f: 
+            json.dump({"auto_trading": stato}, f)
+    except: 
+        pass
 
 stato_precedente = carica_config_stato()
 
@@ -37,8 +41,10 @@ alpaca_key = st.sidebar.text_input("Alpaca API Key ID", value=chiave_fissa_id, t
 alpaca_secret = st.sidebar.text_input("Alpaca API Secret Key", value=chiave_fissa_secret, type="password")
 trading_mode = st.sidebar.radio("Modalità Trading", ["Paper (Simulazione)", "Live (Reale)"])
 
-if trading_mode == "Live (Reale)": BASE_URL = "https://api.alpaca.markets"
-else: BASE_URL = "https://paper-api.alpaca.markets"
+if trading_mode == "Live (Reale)": 
+    BASE_URL = "https://api.alpaca.markets"
+else: 
+    BASE_URL = "https://paper-api.alpaca.markets"
 
 DATA_URL = "https://data.alpaca.markets/v1beta3/crypto/us/bars"
 
@@ -76,20 +82,27 @@ tutti_i_soldati = [coin for cat in EQUIPAGGIO.values() for coin in cat]
 def carica_storico_persistente():
     if os.path.exists(CACHE_FILE):
         try:
-            with open(CACHE_FILE, "r") as f: return json.load(f)
-        except: return []
+            with open(CACHE_FILE, "r") as f: 
+                return json.load(f)
+        except: 
+            return []
     return []
 
 def salva_storico_persistente(storico):
     try:
-        with open(CACHE_FILE, "w") as f: json.dump(storico, f)
-    except: pass
+        with open(CACHE_FILE, "w") as f: 
+            json.dump(storico, f)
+    except: 
+        pass
 
-if "scatola_nera" not in st.session_state: st.session_state.scatola_nera = {}
-if "storico_profitti" not in st.session_state: st.session_state.storico_profitti = carica_storico_persistente()
+if "scatola_nera" not in st.session_state: 
+    st.session_state.scatola_nera = {}
+if "storico_profitti" not in st.session_state: 
+    st.session_state.storico_profitti = carica_storico_persistente()
 
 def calcola_rsi(prezzi, periodi=14):
-    if len(prezzi) < periodi + 1: return 50.0
+    if len(prezzi) < periodi + 1: 
+        return 50.0
     variazioni = pd.Series(prezzi).diff()
     guadagni = variazioni.clip(lower=0)
     perdite = -variazioni.clip(upper=0)
@@ -105,7 +118,8 @@ def ottieni_posizioni_reali(key, secret):
         res = requests.get(url, headers=headers)
         if res.status_code == 200:
             return {p["symbol"]: {"qty": float(p["qty"]), "asset_id": p["asset_id"]} for p in res.json()}
-    except: pass
+    except: 
+        pass
     return {}
 
 def ottieni_bilancio_conto(key, secret):
@@ -116,27 +130,33 @@ def ottieni_bilancio_conto(key, secret):
         if res.status_code == 200:
             dati = res.json()
             return {"cash": round(float(dati["cash"]), 2), "portfolio_value": round(float(dati["portfolio_value"]), 2)}
-    except: pass
+    except: 
+        pass
     return {"cash": "0.0", "portfolio_value": "0.0"}
 
 def invia_ordine_market(simbolo, lato, quantita_o_dollari, is_qty, key, secret):
     url_ordine = f"{BASE_URL}/v2/orders"
     headers = {"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret, "Content-Type": "application/json"}
     payload = {"symbol": simbolo.replace("/", ""), "side": lato, "type": "market", "time_in_force": "gtc"}
-    if is_qty: payload["qty"] = str(quantita_o_dollari)
-    else: payload["notional"] = str(quantita_o_dollari)
+    if is_qty: 
+        payload["qty"] = str(quantita_o_dollari)
+    else: 
+        payload["notional"] = str(quantita_o_dollari)
     try:
         res = requests.post(url_ordine, json=payload, headers=headers)
         return res.status_code == 200 or res.status_code == 201
-    except: return False
+    except: 
+        return False
 
-# --- NUOVA FUNZIONE: SCANSIONE SUPER-FAST BATCH (1 SOLA CHIAMATA API) ---
+# --- FUNZIONE SCANSIONE SUPER-FAST BATCH CORRETTA (SBLOCCATA A 2000 LIMIT) ---
 def scarica_dati_globali_batch(key, secret):
-    if not key or not secret: return {}
+    if not key or not secret: 
+        return {}
     headers = {"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret}
-    # Uniamo tutti i simboli in un'unica stringa per la chiamata cumulativa
     simboli_cumulati = ",".join(tutti_i_soldati)
-    params = {"symbols": simboli_cumulati, "timeframe": "2Min", "limit": 30}
+    
+    # LIMIT PORTATO A 2000: Così c'è spazio per le candele di tutte le monete della lista!
+    params = {"symbols": simboli_cumulati, "timeframe": "2Min", "limit": 2000}
     
     mappa_prezzi = {}
     try:
@@ -145,7 +165,6 @@ def scarica_dati_globali_batch(key, secret):
             dati_totali = risposta.json().get("bars", {})
             for s in tutti_i_soldati:
                 s_clean = s.replace("/", "")
-                # Cerca i dati sia con lo slash che senza
                 barre = dati_totali.get(s, dati_totali.get(s_clean, []))
                 if barre:
                     prezzi_chiusura = [b["c"] for b in barre]
@@ -153,9 +172,11 @@ def scarica_dati_globali_batch(key, secret):
                 else:
                     mappa_prezzi[s] = {"prezzo": "No Feed", "rsi": "--"}
         else:
-            for s in tutti_i_soldati: mappa_prezzi[s] = {"prezzo": "Rate Limit", "rsi": "--"}
+            for s in tutti_i_soldati: 
+                mappa_prezzi[s] = {"prezzo": "Rate Limit", "rsi": "--"}
     except:
-        for s in tutti_i_soldati: mappa_prezzi[s] = {"prezzo": "Errore Rete", "rsi": "--"}
+        for s in tutti_i_soldati: 
+            mappa_prezzi[s] = {"prezzo": "Errore Rete", "rsi": "--"}
     return mappa_prezzi
 
 # --- GRAFICA TERMINALE OPERATIVO ---
@@ -176,8 +197,10 @@ if st.sidebar.button("💥 PANIC BUTTON MANUALE"):
 if st.sidebar.button("🔄 Reset Dati Sessione"):
     st.session_state.scatola_nera = {}
     st.session_state.storico_profitti = []
-    if os.path.exists(CACHE_FILE): os.remove(CACHE_FILE)
-    if os.path.exists(CONFIG_FILE): os.remove(CONFIG_FILE)
+    if os.path.exists(CACHE_FILE): 
+        os.remove(CACHE_FILE)
+    if os.path.exists(CONFIG_FILE): 
+        os.remove(CONFIG_FILE)
     st.toast("Tabula Rasa effettuata!", icon="🧼")
     time.sleep(0.5)
     st.rerun()
@@ -187,11 +210,14 @@ pos_reali = ottieni_posizioni_reali(alpaca_key, alpaca_secret)
 totale_guadagnato = sum([t["Gain ($)"] for t in st.session_state.storico_profitti])
 
 c1, c2, c3 = st.columns(3)
-with c1: st.metric("💰 Cash Disponibile", f"$ {info_conto['cash']}")
-with c2: st.metric("🛡️ Capitale Corazzata", f"$ {info_conto['portfolio_value']}")
-with c3: st.metric("💵 CASSA PROFITTI SESSIONE", f"$ {round(totale_guadagnato, 2)}", delta="Ottimizzazione Batch Attiva")
+with c1: 
+    st.metric("💰 Cash Disponibile", f"$ {info_conto['cash']}")
+with c2: 
+    st.metric("🛡️ Capitale Corazzata", f"$ {info_conto['portfolio_value']}")
+with c3: 
+    st.metric("💵 CASSA PROFITTI SESSIONE", f"$ {round(totale_guadagnato, 2)}", delta="Ottimizzazione Batch Attiva")
 
-# Esegui l'unica chiamata internet per tutti i prezzi
+# Esegui l'unica chiamata internet sbloccata per tutti i prezzi
 dati_mercato_freschi = scarica_dati_globali_batch(alpaca_key, alpaca_secret)
 
 # Elaborazione trading ed esposizione tabelle
@@ -246,7 +272,8 @@ for coin in tutti_i_soldati:
                         salva_storico_persistente(st.session_state.storico_profitti)
                         del st.session_state.scatola_nera[coin]
                         stato = "💥 Chiuso!"
-        elif ha_posizione: stato = "📦 In Posizione"
+        elif ha_posizione: 
+            stato = "📦 In Posizione"
 
     tabella_finale_mappa[coin] = {"Prezzo": ultimo_prezzo, "RSI": rsi_attuale, "Stato": stato}
 
