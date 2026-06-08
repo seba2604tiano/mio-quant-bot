@@ -57,7 +57,7 @@ def invia_notifica_telegram(messaggio):
     if tg_token and tg_chat_id:
         url = f"https://api.telegram.org/bot{tg_token}/sendMessage"
         try:
-            requests.post(url, json={"chat_id": tg_chat_id, "text": messaging}, timeout=3)
+            requests.post(url, json={"chat_id": tg_chat_id, "text": messaggio}, timeout=3)
         except:
             pass
 
@@ -373,4 +373,38 @@ for coin in tutti_i_soldati:
                     qty_totale = pos_reali.get(coin_clean, pos_reali.get(coin, {})).get("qty", 0)
                     if qty_totale > 0:
                         qty_da_vendere = round(qty_totale / 2, 4)
-                        if invia_ordine_market(coin, "sell", qty_da_vendere, True, alpaca_key, alp
+                        if invia_ordine_market(coin, "sell", qty_da_vendere, True, alpaca_key, alpaca_secret):
+                            st.session_state.scatola_nera[coin]["venduto_parziale"] = True
+                            st.session_state.scatola_nera[coin]["break_even_attivo"] = True
+                            cap_parz = dati_pos.get("size_effettiva", size_dollari) / 2
+                            bot_parz = round((cap_parz * (guadagno_pct / 100)), 2)
+                            d_tp = {"Ora": datetime.now().strftime('%H:%M:%S'), "Asset": coin, "Perf %": f"+{round(guadagno_pct, 2)}% [TAKE PROFIT 50%]", "Gain ($)": bot_parz}
+                            st.session_state.storico_profitti.append(d_tp)
+                            salva_storico_persistente(st.session_state.storico_profitti)
+                            invia_notifica_telegram(f"✅ TP PARZIALE (50%) su {coin}")
+                            st.toast(f"Venduto 50% di {coin}. Break-Even attivo!", icon="🛡️")
+
+                # 3. PROTEZIONE BREAK-EVEN
+                if dati_pos.get("break_even_attivo", False) and ultimo_prezzo <= dati_pos["prezzo_acquisto"]:
+                    qty_rimanente = pos_reali.get(coin_clean, pos_reali.get(coin, {})).get("qty", 0)
+                    if qty_rimanente > 0:
+                        if invia_ordine_market(coin, "sell", qty_rimanente, True, alpaca_key, alpaca_secret):
+                            d_be = {"Ora": datetime.now().strftime('%H:%M:%S'), "Asset": coin, "Perf %": "0.0% [BREAK-EVEN]", "Gain ($)": 0.0}
+                            st.session_state.storico_profitti.append(d_be)
+                            salva_storico_persistente(st.session_state.storico_profitti)
+                            invia_notifica_telegram(f"🛡️ SCUDO BREAK-EVEN ATTIVATO SU {coin}!")
+                            del st.session_state.scatola_nera[coin]
+                            stato = "🛡️ Break-Even"
+                            continue
+
+                # 4. TRAILING STOP DINAMICO
+                stop_dinamico = dati_pos["prezzo_massimo"] - (2 * atr_attuale) if atr_attuale > 0 else dati_pos["prezzo_massimo"] * (1 - (trailing_distance/100))
+                if ultimo_prezzo <= stop_dinamico:
+                    qty_rimanente = pos_reali.get(coin_clean, pos_reali.get(coin, {})).get("qty", 0)
+                    if qty_rimanente > 0:
+                        if invia_ordine_market(coin, "sell", qty_rimanente, True, alpaca_key, alpaca_secret):
+                            cap_imp = dati_pos.get("size_effettiva", size_dollari)
+                            if dati_pos.get("venduto_parziale", False):
+                                cap_imp = cap_imp / 2
+                            bot_dol = round((cap_imp * (guadagno_pct / 100)), 2)
+                            d_tr = {"Ora": datetime.now().strftime('%H:%M:%S'), "Asset": coin
