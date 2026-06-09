@@ -6,10 +6,10 @@ import time
 from datetime import datetime
 
 # ==============================================================================
-# 🚢 CONFIGURAZIONE PLANCIA STREAMLIT (v53.0)
+# 🚢 CONFIGURAZIONE PLANCIA STREAMLIT (v54.0)
 # ==============================================================================
 st.set_page_config(
-    page_title="🚢 Transatlantico v53.0 - Plancia Quant", 
+    page_title="🚢 Transatlantico v54.0 - Plancia Quant", 
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -19,8 +19,8 @@ if 'pnl_realizzato' not in st.session_state:
     st.session_state.pnl_realizzato = 1485.50  
 if 'posizioni_attive' not in st.session_state:
     st.session_state.posizioni_attive = {
-        "BTC-USD": {"prezzo_ingresso": 96200.0, "stop_loss": 95800.0, "max_prezzo": 96500.0, "quantita": 0.05},
-        "NVDA": {"prezzo_ingresso": 135.20, "stop_loss": 134.50, "max_prezzo": 136.10, "quantita": 10}
+        "BTC-USD": {"prezzo_ingresso": 96200.0, "stop_loss": 95800.0, "max_prezzo": 96500.0, "quantita": 0.05, "trailing_attivo": True},
+        "NVDA": {"prezzo_ingresso": 135.20, "stop_loss": 134.50, "max_prezzo": 136.10, "quantita": 10, "trailing_attivo": False}
     }
 if 'storico_trade' not in st.session_state:
     st.session_state.storico_trade = [
@@ -64,13 +64,12 @@ def genera_universo_volumetrico():
 # ==============================================================================
 # 🛡️ SCUDO ANTI-RATE LIMIT: DOWNLOAD STORICO CON CACHE DI SICUREZZA
 # ==============================================================================
-@st.cache_data(ttl=60)  # Salva i dati storici per 60 secondi per non asfissiare le API di Yahoo
+@st.cache_data(ttl=60)  
 def scarica_dati_radar(universo_tickers):
-    """Scarica i dati storici a 15 minuti evitando di ricaricare ad ogni movimento di slider"""
     try:
         df = yf.download(universo_tickers, period="5d", interval="15m", progress=False, group_by='ticker')
         return df
-    except Exception as e:
+    except Exception:
         return pd.DataFrame()
 
 def calcola_rsi(serie_prezzi, periodi=14):
@@ -83,7 +82,7 @@ def calcola_rsi(serie_prezzi, periodi=14):
 # ==============================================================================
 # 🎯 PLANCIA SUPERIORE: SEZIONE METRICHE
 # ==============================================================================
-st.title("🚢 Transatlantico Volumetrico v53.0")
+st.title("🚢 Transatlantico Volumetrico v54.0")
 st.subheader("Plancia di Comando Quantitativa H24 — Scalping Automatico & Trailing Stop")
 
 totale_trades = len(st.session_state.storico_trade)
@@ -110,25 +109,30 @@ with col3:
 st.markdown("---")
 
 # ==============================================================================
-# 🎛️ SIDEBAR PARAMETRI
+# 🎛️ SIDEBAR PARAMETRI E TRITTICO TRAILING A VISTA
 # ==============================================================================
-st.sidebar.header("⚓ Parametri della Corazzata")
+st.sidebar.header("⚓ Parametri Ingressi")
 soglia_rsi_fondo = st.sidebar.slider("Grilletto RSI (Ipervenduto)", 10, 40, 25)
-trailing_stop_pct = st.sidebar.slider("Trailing Stop (%)", 0.1, 2.0, 0.5, step=0.1)
 max_posizioni = st.sidebar.number_input("Limite Massimo Posizioni", 1, 10, 5)
+
+st.sidebar.markdown("---")
+st.sidebar.header("🎯 Il Trio Trailing (Scalping)")
+# Parametri tarati di default "molto stretti" per catturare micro-variazioni
+trail_attivazione = st.sidebar.slider("1. Soglia Attivazione (%)", 0.05, 1.0, 0.20, step=0.05, help="Profitto minimo per attivare l'inseguimento")
+trail_distanza = st.sidebar.slider("2. Distanza Stop (%)", 0.1, 2.0, 0.30, step=0.05, help="Distanza dello stop dal picco massimo raggiunto")
+trail_passo = st.sidebar.slider("3. Passo Aggiornamento (%)", 0.01, 0.5, 0.05, step=0.01, help="Gradino minimo di salita del prezzo per muovere lo stop")
 
 if st.sidebar.button("🔄 Forza Scansione Universo"):
     st.cache_data.clear()
     aggiungi_log("Universo Azionario e Radar ricalcolati da zero.")
 
 # ==============================================================================
-# 🛰️ RADAR & LOGICA DI TRADING
+# 🛰️ RADAR & LOGICA DI TRADING (TRIO TRAILING SYSTEM)
 # ==============================================================================
 st.header("🔍 Monitoraggio Mercato in Tempo Reale")
 
-with st.spinner("Scansione radar protetta da scudo anti-rate limit..."):
+with st.spinner("Scansione radar attiva..."):
     universo = genera_universo_volumetrico()
-    # Utilizzo della nuova funzione protetta da cache
     storico_universo = scarica_dati_radar(universo)
 
 opportunita_rilevate = []
@@ -148,16 +152,38 @@ if not storico_universo.empty:
                 apertura_gg = df_ticker['Open'].iloc[0]
                 var_percentuale = ((prezzo_attuale - apertura_gg) / apertura_gg) * 100
                 
-                # TRAILING STOP MANAGEMENT
+                # --- CORE LOGIC: GESTIONE POSIZIONI ATTIVE + TRIO TRAILING ---
                 if ticker in st.session_state.posizioni_attive:
                     pos = st.session_state.posizioni_attive[ticker]
-                    if prezzo_attuale > pos["max_prezzo"]:
-                        st.session_state.posizioni_attive[ticker]["max_prezzo"] = prezzo_attuale
-                        nuovo_stop = prezzo_attuale * (1 - (trailing_stop_pct / 100))
-                        if nuovo_stop > pos["stop_loss"]:
-                            st.session_state.posizioni_attive[ticker]["stop_loss"] = nuovo_stop
-                            aggiungi_log(f"🛡️ Trailing Stop ALZATO per {ticker} a ${nuovo_stop:.2f}")
                     
+                    # Calcolo rendimento attuale rispetto al prezzo di ingresso
+                    rendimento_attuale_pct = ((prezzo_attuale - pos["prezzo_ingresso"]) / pos["prezzo_ingresso"]) * 100
+                    
+                    # Garanzia chiavi di stato nel dizionario
+                    if "trailing_attivo" not in pos:
+                        pos["trailing_attivo"] = False
+
+                    # Componente 1: Attivazione del Trailing
+                    if not pos["trailing_attivo"] and rendimento_attuale_pct >= trail_attivazione:
+                        st.session_state.posizioni_attive[ticker]["trailing_attivo"] = True
+                        st.session_state.posizioni_attive[ticker]["max_prezzo"] = prezzo_attuale
+                        st.session_state.posizioni_attive[ticker]["stop_loss"] = prezzo_attuale * (1 - (trail_distanza / 100))
+                        aggiungi_log(f"⚡ TRAILING ATTIVATO per {ticker}: Raggiunta soglia +{rendimento_attuale_pct:.2f}%")
+                    
+                    # Componente 2 & 3: Inseguimento con Distanza e Passo (Step)
+                    elif pos["trailing_attivo"] and prezzo_attuale > pos["max_prezzo"]:
+                        # Calcolo se lo scalino di salita supera il 'Passo Aggiornamento' richiesto
+                        scostamento_passo_pct = ((prezzo_attuale - pos["max_prezzo"]) / pos["max_prezzo"]) * 100
+                        
+                        if scostamento_passo_pct >= trail_passo:
+                            st.session_state.posizioni_attive[ticker]["max_prezzo"] = prezzo_attuale
+                            nuovo_stop = prezzo_attuale * (1 - (trail_distanza / 100))
+                            # Lo stop può solo salire, mai scendere
+                            if nuovo_stop > pos["stop_loss"]:
+                                st.session_state.posizioni_attive[ticker]["stop_loss"] = nuovo_stop
+                                aggiungi_log(f"🛡️ TRITTICO: Stop alzato su {ticker} a ${nuovo_stop:.2f} (Passo +{scostamento_passo_pct:.3f}% superato)")
+
+                    # Controllo ed esecuzione Stop Loss (Uscita)
                     if prezzo_attuale <= pos["stop_loss"]:
                         profitto_ottenuto = (pos["stop_loss"] - pos["prezzo_ingresso"]) * pos["quantita"]
                         st.session_state.pnl_realizzato += profitto_ottenuto
@@ -169,9 +195,9 @@ if not storico_universo.empty:
                             "esito": "✅ WIN" if profitto_ottenuto > 0 else "❌ LOSS"
                         })
                         del st.session_state.posizioni_attive[ticker]
-                        aggiungi_log(f"💥 STOP LOSS COLPITO su {ticker}. Esito: ${profitto_ottenuto:.2f}")
+                        aggiungi_log(f"💥 SCALPING EXIT: Stop colpito su {ticker}. Esito: ${profitto_ottenuto:.2f}")
                 
-                # INGRESSI CACCIA SUL FONDO
+                # --- INGRESSI CACCIA SUL FONDO ---
                 else:
                     if rsi_attuale <= soglia_rsi_fondo and var_percentuale < 0:
                         opportunita_rilevate.append({
@@ -179,16 +205,17 @@ if not storico_universo.empty:
                             "Variazione GG": f"{var_percentuale:.2f}%", "RSI attuale": f"{rsi_attuale:.1f}"
                         })
                         if len(st.session_state.posizioni_attive) < max_posizioni:
-                            stop_iniziale = prezzo_attuale * (1 - (trailing_stop_pct / 100))
+                            stop_iniziale = prezzo_attuale * (1 - (trail_distanza / 100))
                             st.session_state.posizioni_attive[ticker] = {
                                 "prezzo_ingresso": prezzo_attuale, "stop_loss": stop_iniziale,
-                                "max_prezzo": prezzo_attuale, "quantita": round(2000 / prezzo_attuale, 4)
+                                "max_prezzo": prezzo_attuale, "quantita": round(2000 / prezzo_attuale, 4),
+                                "trailing_attivo": False
                             }
-                            aggiungi_log(f"🚀 ENTRATA: {ticker} a ${prezzo_attuale:.2f} (RSI: {rsi_attuale:.1f})")
+                            aggiungi_log(f"🚀 ENTRATA AUTOMATICA: {ticker} a ${prezzo_attuale:.2f} (RSI: {rsi_attuale:.1f})")
         except Exception:
             continue
 else:
-    st.warning("⚠️ Radar in attesa di sblocco da Yahoo Finance. Le quotazioni riprenderanno a breve grazie allo scudo di cache.")
+    st.warning("⚠️ Radar in attesa di sblocco API. Allineamento scudi di cache in corso...")
 
 # ==============================================================================
 # 📟 VISUALIZZAZIONE INTERFACCIA
@@ -200,10 +227,11 @@ with col_sx:
     if st.session_state.posizioni_attive:
         tabella_pos = []
         for tk, dati in st.session_state.posizioni_attive.items():
+            t_status = "ATTIVO ⚡" if dati.get("trailing_attivo", False) else "In attesa di soglia ⏳"
             tabella_pos.append({
                 "Asset": tk, "Prezzo Ingresso": f"${dati['prezzo_ingresso']:.2f}",
                 "Stop Loss Attuale": f"${dati['stop_loss']:.2f}", "Picco Massimo Visto": f"${dati['max_prezzo']:.2f}",
-                "Quote a Bordo": dati['quantita']
+                "Stato Trailing": t_status
             })
         st.dataframe(pd.DataFrame(tabella_pos), width='stretch', hide_index=True)
     else:
