@@ -42,7 +42,7 @@ ASSET_UNIVERSE = [
     "NVDA", "TSLA", "AAPL", "MSFT", "AMZN", "META", "GOOGL", "NFLX", "AMD", "INTC", "QCOM",
     
     # 🔋 TITOLI COMPORTAMENTALI, FINTECH & EV
-    "PLTR", "COIN", "MARA", "SMCI", "BABA", "SQ", "HOOD", "NIO",
+    "PLTR", "COIN", "MARA", "SMCI", "BABA", "HOOD", "NIO",
     
     # 🛡️ ETF & MATERIE PRIME (Coperture macro)
     "SPY", "QQQ", "IWM", "DIA", "GLD", "SLV", "USO", "SMH", "ARKK", "XLE", "XBI", "TLT"
