@@ -6,17 +6,17 @@ import time
 from datetime import datetime
 
 # ==============================================================================
-# 🚢 CONFIGURAZIONE PLANCIA STREAMLIT (v52.0)
+# 🚢 CONFIGURAZIONE PLANCIA STREAMLIT (v53.0)
 # ==============================================================================
 st.set_page_config(
-    page_title="🚢 Transatlantico v52.0 - Plancia Quant", 
+    page_title="🚢 Transatlantico v53.0 - Plancia Quant", 
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Inizializzazione della memoria della nave (Session State) per evitare reset al refresh
+# Inizializzazione della memoria della nave (Session State)
 if 'pnl_realizzato' not in st.session_state:
-    st.session_state.pnl_realizzato = 1485.50  # Profitto iniziale custodito
+    st.session_state.pnl_realizzato = 1485.50  
 if 'posizioni_attive' not in st.session_state:
     st.session_state.posizioni_attive = {
         "BTC-USD": {"prezzo_ingresso": 96200.0, "stop_loss": 95800.0, "max_prezzo": 96500.0, "quantita": 0.05},
@@ -38,7 +38,7 @@ def aggiungi_log(messaggio):
         st.session_state.log_sistema.pop()
 
 # ==============================================================================
-# 🌌 MOTORI: GENERAZIONE UNIVERSO VOLUMETRICO DINAMICO
+# 🌌 MOTORI: GENERAZIONE UNIVERSO VOLUMETRICO DINAMICO (CACHED)
 # ==============================================================================
 @st.cache_data(ttl=1800)
 def genera_universo_volumetrico():
@@ -61,6 +61,18 @@ def genera_universo_volumetrico():
         pass
     return crypto_kings + pool_di_base[:47]
 
+# ==============================================================================
+# 🛡️ SCUDO ANTI-RATE LIMIT: DOWNLOAD STORICO CON CACHE DI SICUREZZA
+# ==============================================================================
+@st.cache_data(ttl=60)  # Salva i dati storici per 60 secondi per non asfissiare le API di Yahoo
+def scarica_dati_radar(universo_tickers):
+    """Scarica i dati storici a 15 minuti evitando di ricaricare ad ogni movimento di slider"""
+    try:
+        df = yf.download(universo_tickers, period="5d", interval="15m", progress=False, group_by='ticker')
+        return df
+    except Exception as e:
+        return pd.DataFrame()
+
 def calcola_rsi(serie_prezzi, periodi=14):
     delta = serie_prezzi.diff()
     guadagno = (delta.where(delta > 0, 0)).rolling(window=periodi).mean()
@@ -71,7 +83,7 @@ def calcola_rsi(serie_prezzi, periodi=14):
 # ==============================================================================
 # 🎯 PLANCIA SUPERIORE: SEZIONE METRICHE
 # ==============================================================================
-st.title("🚢 Transatlantico Volumetrico v52.0")
+st.title("🚢 Transatlantico Volumetrico v53.0")
 st.subheader("Plancia di Comando Quantitativa H24 — Scalping Automatico & Trailing Stop")
 
 totale_trades = len(st.session_state.storico_trade)
@@ -107,20 +119,17 @@ max_posizioni = st.sidebar.number_input("Limite Massimo Posizioni", 1, 10, 5)
 
 if st.sidebar.button("🔄 Forza Scansione Universo"):
     st.cache_data.clear()
-    aggiungi_log("Universo Azionario ricalcolato su base volumi.")
+    aggiungi_log("Universo Azionario e Radar ricalcolati da zero.")
 
 # ==============================================================================
 # 🛰️ RADAR & LOGICA DI TRADING
 # ==============================================================================
 st.header("🔍 Monitoraggio Mercato in Tempo Reale")
 
-with st.spinner("Scansione radar..."):
+with st.spinner("Scansione radar protetta da scudo anti-rate limit..."):
     universo = genera_universo_volumetrico()
-    try:
-        storico_universo = yf.download(universo, period="5d", interval="15m", progress=False, group_by='ticker')
-    except Exception as e:
-        st.error(f"Errore radar: {e}")
-        storico_universo = pd.DataFrame()
+    # Utilizzo della nuova funzione protetta da cache
+    storico_universo = scarica_dati_radar(universo)
 
 opportunita_rilevate = []
 
@@ -178,9 +187,11 @@ if not storico_universo.empty:
                             aggiungi_log(f"🚀 ENTRATA: {ticker} a ${prezzo_attuale:.2f} (RSI: {rsi_attuale:.1f})")
         except Exception:
             continue
+else:
+    st.warning("⚠️ Radar in attesa di sblocco da Yahoo Finance. Le quotazioni riprenderanno a breve grazie allo scudo di cache.")
 
 # ==============================================================================
-# 📟 VISUALIZZAZIONE INTERFACCIA AGGIORNATA (STANDARD 2026)
+# 📟 VISUALIZZAZIONE INTERFACCIA
 # ==============================================================================
 col_sx, col_dx = st.columns([2, 1])
 
@@ -194,14 +205,12 @@ with col_sx:
                 "Stop Loss Attuale": f"${dati['stop_loss']:.2f}", "Picco Massimo Visto": f"${dati['max_prezzo']:.2f}",
                 "Quote a Bordo": dati['quantita']
             })
-        # 💎 FIX: use_container_width=True sostituito con width='stretch'
         st.dataframe(pd.DataFrame(tabella_pos), width='stretch', hide_index=True)
     else:
         st.info("Nessun siluro in mare.")
 
     st.subheader("🔥 Radar Occasioni Rilevate (RSI sul Fondo)")
     if opportunita_rilevate:
-        # 💎 FIX: use_container_width=True sostituito con width='stretch'
         st.dataframe(pd.DataFrame(opportunita_rilevate), width='stretch', hide_index=True)
     else:
         st.success("Nessun asset sottoesteso trovato al momento.")
@@ -214,7 +223,6 @@ with col_dx:
     st.subheader("📋 Storico Ultimi Rilasci")
     df_storico = pd.DataFrame(st.session_state.storico_trade)
     if not df_storico.empty:
-        # 💎 FIX: use_container_width=True sostituito con width='stretch'
         st.dataframe(df_storico.tail(5), width='stretch', hide_index=True)
 
 time.sleep(0.5)
