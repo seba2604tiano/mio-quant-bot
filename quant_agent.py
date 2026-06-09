@@ -6,10 +6,10 @@ import time
 from datetime import datetime
 
 # ==============================================================================
-# 🚢 CONFIGURAZIONE PLANCIA STREAMLIT (v51.0)
+# 🚢 CONFIGURAZIONE PLANCIA STREAMLIT (v52.0)
 # ==============================================================================
 st.set_page_config(
-    page_title="🚢 Transatlantico v51.0 - Plancia Quant", 
+    page_title="🚢 Transatlantico v52.0 - Plancia Quant", 
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -71,7 +71,7 @@ def calcola_rsi(serie_prezzi, periodi=14):
 # ==============================================================================
 # 🎯 PLANCIA SUPERIORE: SEZIONE METRICHE
 # ==============================================================================
-st.title("🚢 Transatlantico Volumetrico v51.0")
+st.title("🚢 Transatlantico Volumetrico v52.0")
 st.subheader("Plancia di Comando Quantitativa H24 — Scalping Automatico & Trailing Stop")
 
 totale_trades = len(st.session_state.storico_trade)
@@ -180,7 +180,7 @@ if not storico_universo.empty:
             continue
 
 # ==============================================================================
-# 📟 VISUALIZZAZIONE INTERFACCIA CORRETTA
+# 📟 VISUALIZZAZIONE INTERFACCIA AGGIORNATA (STANDARD 2026)
 # ==============================================================================
 col_sx, col_dx = st.columns([2, 1])
 
@@ -194,25 +194,27 @@ with col_sx:
                 "Stop Loss Attuale": f"${dati['stop_loss']:.2f}", "Picco Massimo Visto": f"${dati['max_prezzo']:.2f}",
                 "Quote a Bordo": dati['quantita']
             })
-        st.dataframe(pd.DataFrame(tabella_pos), use_container_width=True, hide_index=True)
+        # 💎 FIX: use_container_width=True sostituito con width='stretch'
+        st.dataframe(pd.DataFrame(tabella_pos), width='stretch', hide_index=True)
     else:
         st.info("Nessun siluro in mare.")
 
     st.subheader("🔥 Radar Occasioni Rilevate (RSI sul Fondo)")
     if opportunita_rilevate:
-        st.dataframe(pd.DataFrame(opportunita_rilevate), use_container_width=True, hide_index=True)
+        # 💎 FIX: use_container_width=True sostituito con width='stretch'
+        st.dataframe(pd.DataFrame(opportunita_rilevate), width='stretch', hide_index=True)
     else:
         st.success("Nessun asset sottoesteso trovato al momento.")
 
 with col_dx:
     st.subheader("📜 Log Scatola Nera (Live)")
-    # 💎 IL FIX CRUCIALE: Un singolo "\n" pulito. Niente doppi backslash strutturali.
     testo_log = "\n".join(st.session_state.log_sistema)
     st.text_area("Eventi del Motore", value=testo_log, height=180, label_visibility="collapsed")
     
     st.subheader("📋 Storico Ultimi Rilasci")
     df_storico = pd.DataFrame(st.session_state.storico_trade)
     if not df_storico.empty:
-        st.dataframe(df_storico.tail(5), use_container_width=True, hide_index=True)
+        # 💎 FIX: use_container_width=True sostituito con width='stretch'
+        st.dataframe(df_storico.tail(5), width='stretch', hide_index=True)
 
 time.sleep(0.5)
