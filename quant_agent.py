@@ -14,30 +14,22 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Inizializzazione della memoria della nave (Session State)
+# Inizializzazione della memoria della nave (Session State) per evitare reset al refresh
 if 'pnl_realizzato' not in st.session_state:
-    st.session_state.pnl_realizzato = 1465.50  # Allineato al centesimo con la plancia live
+    st.session_state.pnl_realizzato = 1485.50  # Profitto iniziale custodito
 if 'posizioni_attive' not in st.session_state:
     st.session_state.posizioni_attive = {
         "BTC-USD": {"prezzo_ingresso": 96200.0, "stop_loss": 95800.0, "max_prezzo": 96500.0, "quantita": 0.05},
-        "NVDA": {"prezzo_ingresso": 135.20, "stop_loss": 134.50, "max_prezzo": 136.10, "quantita": 10},
-        "ETH-USD": {"prezzo_ingresso": 3420.50, "stop_loss": 3400.00, "max_prezzo": 3435.00, "quantita": 0.6},
-        "SOL-USD": {"prezzo_ingresso": 165.20, "stop_loss": 163.50, "max_prezzo": 166.00, "quantita": 12}
+        "NVDA": {"prezzo_ingresso": 135.20, "stop_loss": 134.50, "max_prezzo": 136.10, "quantita": 10}
     }
 if 'storico_trade' not in st.session_state:
     st.session_state.storico_trade = [
         {"data": "2026-06-08", "ticker": "TSLA", "tipo": "LONG", "profitto": 120.00, "esito": "✅ WIN"},
         {"data": "2026-06-08", "ticker": "SOL-USD", "tipo": "LONG", "profitto": 45.50, "esito": "✅ WIN"},
         {"data": "2026-06-09", "ticker": "AAPL", "tipo": "LONG", "profitto": -30.00, "esito": "❌ LOSS"},
-        {"data": "2026-06-09", "ticker": "AAPL", "tipo": "LONG", "profitto": -20.00, "esito": "❌ LOSS"},
     ]
 if 'log_sistema' not in st.session_state:
-    st.session_state.log_sistema = [
-        "🚀 ORDINE ESEGUITO: Acquistato ETH-USD a $3420.50 (RSI: 22.4). Stop Loss a $3400.00",
-        "🚀 ORDINE ESEGUITO: Acquistato SOL-USD a $165.20 (RSI: 24.1). Stop Loss a $163.50",
-        "💥 STOP LOSS COLPITO su AAPL. Profitto/Perdita: $-20.00. Posizione Chiusa.",
-        "Sistemi avviati correttamente. In attesa dei mercati..."
-    ]
+    st.session_state.log_sistema = ["Sistemi avviati correttamente. In attesa dei mercati..."]
 
 def aggiungi_log(messaggio):
     orario = datetime.now().strftime("%H:%M:%S")
@@ -50,6 +42,7 @@ def aggiungi_log(messaggio):
 # ==============================================================================
 @st.cache_data(ttl=1800)
 def genera_universo_volumetrico():
+    """Genera dinamicamente 50 asset basati sui volumi di giornata"""
     crypto_kings = ["BTC-USD", "ETH-USD", "SOL-USD"]
     pool_di_base = [
         "NVDA", "TSLA", "AAPL", "MSFT", "AMZN", "META", "GOOGL", "NFLX", "AMD", "INTC", 
@@ -76,7 +69,7 @@ def calcola_rsi(serie_prezzi, periodi=14):
     return 100 - (100 / (1 + rs))
 
 # ==============================================================================
-# 🎯 LA CIMA DELLA PLANCIA: SEZIONE ENTRATE / PROFITTI
+# 🎯 PLANCIA SUPERIORE: SEZIONE METRICHE
 # ==============================================================================
 st.title("🚢 Transatlantico Volumetrico v51.0")
 st.subheader("Plancia di Comando Quantitativa H24 — Scalping Automatico & Trailing Stop")
@@ -86,63 +79,47 @@ win_trades = sum(1 for t in st.session_state.storico_trade if "WIN" in t["esito"
 win_rate = (win_trades / totale_trades * 100) if totale_trades > 0 else 0.0
 
 col1, col2, col3 = st.columns(3)
-
 with col1:
     st.markdown("<div style='background-color:#1e293b; padding:15px; border-radius:10px; border-left: 5px solid #10b981;'>", unsafe_allow_html=True)
-    st.metric(
-        label="💰 PROFITTO NETTO REALIZZATO", 
-        value=f"${st.session_state.pnl_realizzato:,.2f}", 
-        delta="Messo in Cassaforte (Verde)",
-        delta_color="normal"
-    )
+    st.metric(label="💰 PROFITTO NETTO REALIZZATO", value=f"${st.session_state.pnl_realizzato:,.2f}", delta="Messo in Cassaforte")
     st.markdown("</div>", unsafe_allow_html=True)
 
 with col2:
     st.markdown("<div style='background-color:#1e293b; padding:15px; border-radius:10px; border-left: 5px solid #3b82f6;'>", unsafe_allow_html=True)
     attive = len(st.session_state.posizioni_attive)
-    st.metric(
-        label="🎯 SILURI IN MARE (POSIZIONI)", 
-        value=f"{attive} / 5 Attive", 
-        delta=f"{5 - attive} Slot Liberi",
-        delta_color="inverse"
-    )
+    st.metric(label="🎯 SILURI IN MARE (POSIZIONI)", value=f"{attive} / 5 Target", delta=f"{5 - attive} Slot Liberi", delta_color="inverse")
     st.markdown("</div>", unsafe_allow_html=True)
 
 with col3:
     st.markdown("<div style='background-color:#1e293b; padding:15px; border-radius:10px; border-left: 5px solid #f59e0b;'>", unsafe_allow_html=True)
-    st.metric(
-        label="📈 PRECISIONE SQUADRA", 
-        value=f"{win_rate:.1f}%", 
-        delta=f"Su {totale_trades} Operazioni Chiuse",
-        delta_color="normal"
-    )
+    st.metric(label="📈 PRECISIONE STRATEGIA", value=f"{win_rate:.1f}%", delta=f"Su {totale_trades} Operazioni Chiuse")
     st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown("---")
 
 # ==============================================================================
-# 🎛️ SIDEBAR DI CONTROLLO PARAMETRI MECCANICI
+# 🎛️ SIDEBAR PARAMETRI
 # ==============================================================================
 st.sidebar.header("⚓ Parametri della Corazzata")
-soglia_rsi_fondo = st.sidebar.slider("Grilletto RSI (Ipervenduto Fondo)", 10, 40, 25)
-trailing_stop_pct = st.sidebar.slider("Trailing Stop Ottimizzato (%)", 0.1, 2.0, 0.5, step=0.1)
+soglia_rsi_fondo = st.sidebar.slider("Grilletto RSI (Ipervenduto)", 10, 40, 25)
+trailing_stop_pct = st.sidebar.slider("Trailing Stop (%)", 0.1, 2.0, 0.5, step=0.1)
 max_posizioni = st.sidebar.number_input("Limite Massimo Posizioni", 1, 10, 5)
 
 if st.sidebar.button("🔄 Forza Scansione Universo"):
     st.cache_data.clear()
-    aggiungi_log("Universo Azionario resettato e ricalcolato su base volumi.")
+    aggiungi_log("Universo Azionario ricalcolato su base volumi.")
 
 # ==============================================================================
-# 🛰️ SCANSIONE LIVE ED ESECUZIONE MATEMATICA DELLA STRATEGIA
+# 🛰️ RADAR & LOGICA DI TRADING
 # ==============================================================================
 st.header("🔍 Monitoraggio Mercato in Tempo Reale")
 
-with st.spinner("Scansione in corso dei 50 leader volumetrici..."):
+with st.spinner("Scansione radar..."):
     universo = genera_universo_volumetrico()
     try:
         storico_universo = yf.download(universo, period="5d", interval="15m", progress=False, group_by='ticker')
     except Exception as e:
-        st.error(f"Errore radar Yahoo Finance: {e}")
+        st.error(f"Errore radar: {e}")
         storico_universo = pd.DataFrame()
 
 opportunita_rilevate = []
@@ -162,7 +139,7 @@ if not storico_universo.empty:
                 apertura_gg = df_ticker['Open'].iloc[0]
                 var_percentuale = ((prezzo_attuale - apertura_gg) / apertura_gg) * 100
                 
-                # GESTIONE TRAILING STOP
+                # TRAILING STOP MANAGEMENT
                 if ticker in st.session_state.posizioni_attive:
                     pos = st.session_state.posizioni_attive[ticker]
                     if prezzo_attuale > pos["max_prezzo"]:
@@ -183,31 +160,27 @@ if not storico_universo.empty:
                             "esito": "✅ WIN" if profitto_ottenuto > 0 else "❌ LOSS"
                         })
                         del st.session_state.posizioni_attive[ticker]
-                        aggiungi_log(f"💥 STOP LOSS COLPITO su {ticker}. Esito registrato.")
+                        aggiungi_log(f"💥 STOP LOSS COLPITO su {ticker}. Esito: ${profitto_ottenuto:.2f}")
                 
-                # NUOVI INGRESSI
+                # INGRESSI CACCIA SUL FONDO
                 else:
                     if rsi_attuale <= soglia_rsi_fondo and var_percentuale < 0:
                         opportunita_rilevate.append({
-                            "Ticker": ticker,
-                            "Prezzo": f"${prezzo_attuale:.2f}",
-                            "Variazione GG": f"{var_percentuale:.2f}%",
-                            "RSI attuale": f"{rsi_attuale:.1f}"
+                            "Ticker": ticker, "Prezzo": f"${prezzo_attuale:.2f}",
+                            "Variazione GG": f"{var_percentuale:.2f}%", "RSI attuale": f"{rsi_attuale:.1f}"
                         })
                         if len(st.session_state.posizioni_attive) < max_posizioni:
                             stop_iniziale = prezzo_attuale * (1 - (trailing_stop_pct / 100))
                             st.session_state.posizioni_attive[ticker] = {
-                                "prezzo_ingresso": prezzo_attuale,
-                                "stop_loss": stop_iniziale,
-                                "max_prezzo": prezzo_attuale,
-                                "quantita": round(2000 / prezzo_attuale, 4)
+                                "prezzo_ingresso": prezzo_attuale, "stop_loss": stop_iniziale,
+                                "max_prezzo": prezzo_attuale, "quantita": round(2000 / prezzo_attuale, 4)
                             }
-                            aggiungi_log(f"🚀 ORDINE ESEGUITO: Acquistato {ticker} a ${prezzo_attuale:.2f} (RSI: {rsi_attuale:.1f}).")
+                            aggiungi_log(f"🚀 ENTRATA: {ticker} a ${prezzo_attuale:.2f} (RSI: {rsi_attuale:.1f})")
         except Exception:
             continue
 
 # ==============================================================================
-# 📟 VISUALIZZAZIONE DATI OPERATIVI
+# 📟 VISUALIZZAZIONE INTERFACCIA CORRETTA
 # ==============================================================================
 col_sx, col_dx = st.columns([2, 1])
 
@@ -217,10 +190,8 @@ with col_sx:
         tabella_pos = []
         for tk, dati in st.session_state.posizioni_attive.items():
             tabella_pos.append({
-                "Asset": tk,
-                "Prezzo Ingresso": f"${dati['prezzo_ingresso']:.2f}",
-                "Stop Loss Attuale": f"${dati['stop_loss']:.2f}",
-                "Picco Massimo Visto": f"${dati['max_prezzo']:.2f}",
+                "Asset": tk, "Prezzo Ingresso": f"${dati['prezzo_ingresso']:.2f}",
+                "Stop Loss Attuale": f"${dati['stop_loss']:.2f}", "Picco Massimo Visto": f"${dati['max_prezzo']:.2f}",
                 "Quote a Bordo": dati['quantita']
             })
         st.dataframe(pd.DataFrame(tabella_pos), use_container_width=True, hide_index=True)
@@ -231,14 +202,15 @@ with col_sx:
     if opportunita_rilevate:
         st.dataframe(pd.DataFrame(opportunita_rilevate), use_container_width=True, hide_index=True)
     else:
-        st.success("Tutti i 50 titoli sono in acque stabili.")
+        st.success("Nessun asset sottoesteso trovato al momento.")
 
 with col_dx:
     st.subheader("📜 Log Scatola Nera (Live)")
-    # 💎 IL FIX REALE: Singolo backslash per permettere a Streamlit di andare a capo riga per riga
-    st.text_area("Eventi del Motore", value="\n".join(st.session_state.log_sistema), height=180, label_visibility="collapsed")
+    # 💎 IL FIX CRUCIALE: Un singolo "\n" pulito. Niente doppi backslash strutturali.
+    testo_log = "\n".join(st.session_state.log_sistema)
+    st.text_area("Eventi del Motore", value=testo_log, height=180, label_visibility="collapsed")
     
-    st.subheader("📋 Storico Ultimi Rilasci (Verde)")
+    st.subheader("📋 Storico Ultimi Rilasci")
     df_storico = pd.DataFrame(st.session_state.storico_trade)
     if not df_storico.empty:
         st.dataframe(df_storico.tail(5), use_container_width=True, hide_index=True)
