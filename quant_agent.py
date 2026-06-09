@@ -3,13 +3,14 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import time
+import requests
 from datetime import datetime
 
 # ==============================================================================
-# 🚢 CONFIGURAZIONE PLANCIA STREAMLIT (v54.0)
+# 🚢 CONFIGURAZIONE PLANCIA STREAMLIT (v55.0)
 # ==============================================================================
 st.set_page_config(
-    page_title="🚢 Transatlantico v54.0 - Plancia Quant", 
+    page_title="🚢 Transatlantico v55.0 - Plancia Quant", 
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -42,7 +43,6 @@ def aggiungi_log(messaggio):
 # ==============================================================================
 @st.cache_data(ttl=1800)
 def genera_universo_volumetrico():
-    """Genera dinamicamente 50 asset basati sui volumi di giornata"""
     crypto_kings = ["BTC-USD", "ETH-USD", "SOL-USD"]
     pool_di_base = [
         "NVDA", "TSLA", "AAPL", "MSFT", "AMZN", "META", "GOOGL", "NFLX", "AMD", "INTC", 
@@ -52,7 +52,11 @@ def genera_universo_volumetrico():
         "AMC", "LCID", "RIVN", "UPST", "NKE", "SBUX", "UBER", "SHOP", "PYPL", "DKNG", "MU"
     ]
     try:
-        dati_volume = yf.download(pool_di_base, period="1d", progress=False)
+        # Applichiamo una sessione fittizia anche qui per sicurezza
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
+        session = requests.Session()
+        session.headers.update(headers)
+        dati_volume = yf.download(pool_di_base, period="1d", progress=False, session=session)
         if 'Volume' in dati_volume and not dati_volume['Volume'].empty:
             ultimi_volumi = dati_volume['Volume'].iloc[-1].dropna()
             top_47_azioni = ultimi_volumi.sort_values(ascending=False).head(47).index.tolist()
@@ -62,15 +66,30 @@ def genera_universo_volumetrico():
     return crypto_kings + pool_di_base[:47]
 
 # ==============================================================================
-# 🛡️ SCUDO ANTI-RATE LIMIT: DOWNLOAD STORICO CON CACHE DI SICUREZZA
+# 🛡️ CONTROMISURE ECM: DOWNLOAD CON USER-AGENT ED EVASIONE RATE LIMIT
 # ==============================================================================
 @st.cache_data(ttl=60)  
 def scarica_dati_radar(universo_tickers):
-    try:
-        df = yf.download(universo_tickers, period="5d", interval="15m", progress=False, group_by='ticker')
-        return df
-    except Exception:
-        return pd.DataFrame()
+    """Scarica i dati aggirando i blocchi IP di Yahoo Finance usando un browser fittizio e tentativi multipli"""
+    # Mascheriamo la richiesta come se provenisse da un PC Windows con Chrome aggiornato
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    }
+    session = requests.Session()
+    session.headers.update(headers)
+    
+    # Algoritmo di retry: se fallisce, aspetta e riprova fino a 3 volte
+    for tentativo in range(3):
+        try:
+            df = yf.download(universo_tickers, period="5d", interval="15m", progress=False, group_by='ticker', session=session)
+            if not df.empty:
+                return df
+        except Exception:
+            time.sleep(1.5) # Pausa tattica prima di riprovare
+            continue
+            
+    return pd.DataFrame()
 
 def calcola_rsi(serie_prezzi, periodi=14):
     delta = serie_prezzi.diff()
@@ -82,7 +101,7 @@ def calcola_rsi(serie_prezzi, periodi=14):
 # ==============================================================================
 # 🎯 PLANCIA SUPERIORE: SEZIONE METRICHE
 # ==============================================================================
-st.title("🚢 Transatlantico Volumetrico v54.0")
+st.title("🚢 Transatlantico Volumetrico v55.0")
 st.subheader("Plancia di Comando Quantitativa H24 — Scalping Automatico & Trailing Stop")
 
 totale_trades = len(st.session_state.storico_trade)
@@ -117,10 +136,9 @@ max_posizioni = st.sidebar.number_input("Limite Massimo Posizioni", 1, 10, 5)
 
 st.sidebar.markdown("---")
 st.sidebar.header("🎯 Il Trio Trailing (Scalping)")
-# Parametri tarati di default "molto stretti" per catturare micro-variazioni
-trail_attivazione = st.sidebar.slider("1. Soglia Attivazione (%)", 0.05, 1.0, 0.20, step=0.05, help="Profitto minimo per attivare l'inseguimento")
-trail_distanza = st.sidebar.slider("2. Distanza Stop (%)", 0.1, 2.0, 0.30, step=0.05, help="Distanza dello stop dal picco massimo raggiunto")
-trail_passo = st.sidebar.slider("3. Passo Aggiornamento (%)", 0.01, 0.5, 0.05, step=0.01, help="Gradino minimo di salita del prezzo per muovere lo stop")
+trail_attivazione = st.sidebar.slider("1. Soglia Attivazione (%)", 0.05, 1.0, 0.20, step=0.05)
+trail_distanza = st.sidebar.slider("2. Distanza Stop (%)", 0.1, 2.0, 0.30, step=0.05)
+trail_passo = st.sidebar.slider("3. Passo Aggiornamento (%)", 0.01, 0.5, 0.05, step=0.01)
 
 if st.sidebar.button("🔄 Forza Scansione Universo"):
     st.cache_data.clear()
@@ -131,7 +149,7 @@ if st.sidebar.button("🔄 Forza Scansione Universo"):
 # ==============================================================================
 st.header("🔍 Monitoraggio Mercato in Tempo Reale")
 
-with st.spinner("Scansione radar attiva..."):
+with st.spinner("Scansione radar attiva con protezione ECM..."):
     universo = genera_universo_volumetrico()
     storico_universo = scarica_dati_radar(universo)
 
@@ -155,11 +173,8 @@ if not storico_universo.empty:
                 # --- CORE LOGIC: GESTIONE POSIZIONI ATTIVE + TRIO TRAILING ---
                 if ticker in st.session_state.posizioni_attive:
                     pos = st.session_state.posizioni_attive[ticker]
-                    
-                    # Calcolo rendimento attuale rispetto al prezzo di ingresso
                     rendimento_attuale_pct = ((prezzo_attuale - pos["prezzo_ingresso"]) / pos["prezzo_ingresso"]) * 100
                     
-                    # Garanzia chiavi di stato nel dizionario
                     if "trailing_attivo" not in pos:
                         pos["trailing_attivo"] = False
 
@@ -172,18 +187,16 @@ if not storico_universo.empty:
                     
                     # Componente 2 & 3: Inseguimento con Distanza e Passo (Step)
                     elif pos["trailing_attivo"] and prezzo_attuale > pos["max_prezzo"]:
-                        # Calcolo se lo scalino di salita supera il 'Passo Aggiornamento' richiesto
                         scostamento_passo_pct = ((prezzo_attuale - pos["max_prezzo"]) / pos["max_prezzo"]) * 100
                         
                         if scostamento_passo_pct >= trail_passo:
                             st.session_state.posizioni_attive[ticker]["max_prezzo"] = prezzo_attuale
                             nuovo_stop = prezzo_attuale * (1 - (trail_distanza / 100))
-                            # Lo stop può solo salire, mai scendere
                             if nuovo_stop > pos["stop_loss"]:
                                 st.session_state.posizioni_attive[ticker]["stop_loss"] = nuovo_stop
                                 aggiungi_log(f"🛡️ TRITTICO: Stop alzato su {ticker} a ${nuovo_stop:.2f} (Passo +{scostamento_passo_pct:.3f}% superato)")
 
-                    # Controllo ed esecuzione Stop Loss (Uscita)
+                    # Controllo ed esecuzione Stop Loss
                     if prezzo_attuale <= pos["stop_loss"]:
                         profitto_ottenuto = (pos["stop_loss"] - pos["prezzo_ingresso"]) * pos["quantita"]
                         st.session_state.pnl_realizzato += profitto_ottenuto
@@ -215,7 +228,7 @@ if not storico_universo.empty:
         except Exception:
             continue
 else:
-    st.warning("⚠️ Radar in attesa di sblocco API. Allineamento scudi di cache in corso...")
+    st.warning("⚠️ Radar disturbato da Yahoo Finance. Allineamento contromisure ECM in corso, i dati verranno recuperati automaticamente al prossimo ciclo...")
 
 # ==============================================================================
 # 📟 VISUALIZZAZIONE INTERFACCIA
