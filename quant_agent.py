@@ -206,7 +206,7 @@ if not storico_universo.empty:
             continue
 
 # ==============================================================================
-# 📟 VISUALIZZAZIONE DATI OPERATIVI (Riacciuffate tutte le colonne originali!)
+# 📟 VISUALIZZAZIONE DATI OPERATIVI (Tutte le colonne originarie al loro posto!)
 # ==============================================================================
 col_sx, col_dx = st.columns([2, 1])
 
@@ -234,7 +234,7 @@ with col_sx:
 
 with col_dx:
     st.subheader("📜 Log Scatola Nera (Live)")
-    # ✨ FIX DEFINITIVO: Rimossa la doppia barra \\n che rompeva l'andata a capo!
+    # Formattazione corretta riga per riga per evitare bug grafici
     testo_log_pulito = "\n".join(st.session_state.log_sistema)
     st.text_area("Eventi del Motore", value=testo_log_pulito, height=180, label_visibility="collapsed")
     
