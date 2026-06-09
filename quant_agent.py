@@ -45,7 +45,7 @@ def genera_universo_volumetrico():
     crypto_kings = ["BTC-USD", "ETH-USD", "SOL-USD"]
     pool_di_base = [
         "NVDA", "AAPL", "MSFT", "AMZN", "META", "GOOGL", "NFLX", "AMD", "INTC", 
-        "QCOM", "PLTR", "COIN", "MARA", "SMCI", "BABA", "HOOD", "NIO", "SPY", "QQQ", 
+        "QCOM", "PLTR", "COIN", "MARA", "SMCI", "BABA", "HOOD", "SPY", "QQQ", 
         "IWM", "DIA", "GLD", "SLV", "USO", "SMH", "ARKK", "XLE", "XBI", "TLT", "BAC", 
         "JPM", "WMT", "DIS", "XOM", "TSM", "F", "GE", "PFE", "T", "VZ", "WFC", "GME", 
         "AMC", "LCID", "RIVN", "UPST", "NKE", "SBUX", "UBER", "SHOP", "PYPL", "DKNG", "MU"
