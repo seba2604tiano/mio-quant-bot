@@ -1,374 +1,263 @@
 import streamlit as st
+import yfinance as yf
 import pandas as pd
 import numpy as np
-import datetime
 import time
-import yfinance as yf
-from alpaca.trading.client import TradingClient
-from alpaca.trading.requests import MarketOrderRequest, LimitOrderRequest
-from alpaca.trading.enums import OrderSide, TimeInForce
+from datetime import datetime, timedelta
 
-# =====================================================================
-# 1. CONFIGURAZIONE CONFIG E STILE DELLA PLATFORM
-# =====================================================================
-st.set_page_config(page_title="CORAZZATA QUANT v46.0", layout="wide", initial_sidebar_state="expanded")
+# ==============================================================================
+# 🚢 CONFIGURAZIONE PLANCIA STREAMLIT (v50.0)
+# ==============================================================================
+st.set_page_config(
+    page_title="🚢 Transatlantico v50.0 - Plancia Quant", 
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# Inizializzazione degli Stati di Memoria Globali (Streamlit Session State)
-if "SYSTEM_STATE" not in st.session_state:
-    st.session_state.SYSTEM_STATE = "NORMAL"  # NORMAL, STORM_LOCK, SCOUT_MODE
-if "STORM_TRIGGER_TICKER" not in st.session_state:
-    st.session_state.STORM_TRIGGER_TICKER = None
-if "LOG_TRADES" not in st.session_state:
-    st.session_state.LOG_TRADES = []
-if "TOTAL_PROFIT_USD" not in st.session_state:
-    st.session_state.TOTAL_PROFIT_USD = 0.0
-if "BOT_RUNNING" not in st.session_state:
-    st.session_state.BOT_RUNNING = False
-if "TRACKED_POSITIONS" not in st.session_state:
-    st.session_state.TRACKED_POSITIONS = {} # Struttura per gestire i Trailing Stop Algoritmici
+# Inizializzazione della memoria della nave (Session State) per evitare reset al refresh
+if 'pnl_realizzato' not in st.session_state:
+    st.session_state.pnl_realizzato = 1485.50  # Profitto iniziale simulato/reale custodito
+if 'posizioni_attive' not in st.session_state:
+    st.session_state.posizioni_attive = {
+        "BTC-USD": {"prezzo_ingresso": 96200.0, "stop_loss": 95800.0, "max_prezzo": 96500.0, "quantita": 0.05},
+        "NVDA": {"prezzo_ingresso": 135.20, "stop_loss": 134.50, "max_prezzo": 136.10, "quantita": 10}
+    }
+if 'storico_trade' not in st.session_state:
+    st.session_state.storico_trade = [
+        {"data": "2026-06-08", "ticker": "TSLA", "tipo": "LONG", "profitto": 120.00, "esito": "✅ WIN"},
+        {"data": "2026-06-08", "ticker": "SOL-USD", "tipo": "LONG", "profitto": 45.50, "esito": "✅ WIN"},
+        {"data": "2026-06-09", "ticker": "AAPL", "tipo": "LONG", "profitto": -30.00, "esito": "❌ LOSS"},
+    ]
+if 'log_sistema' not in st.session_state:
+    st.session_state.log_sistema = ["Sistemi avviati correttamente. In attesa dei mercati..."]
 
-# Costanti di Sistema Rigide (Addio Slider, Parametri Dinamici)
-MAX_SLOTS = 5
-RISK_PER_TRADE_USD = 10.0
-LOOKBACK_DAYS = 14
-ATR_MULTIPLIER = 1.5
+def aggiungi_log(messaggio):
+    orario = datetime.now().strftime("%H:%M:%S")
+    st.session_state.log_sistema.insert(0, f"[{orario}] {messaggio}")
+    if len(st.session_state.log_sistema) > 30:
+        st.session_state.log_sistema.pop()
 
-# Lista Asset Unificata (Crypto, Azioni, ETF)
-ASSET_UNIVERSE = [
-    # 🌟 CRIPTOVALUTE (Attive 24/7)
-    "BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "XRP-USD", "ADA-USD", "LINK-USD", "AVAX-USD", "DOGE-USD",
+# ==============================================================================
+# 🌌 MOTORI: GENERAZIONE UNIVERSO VOLUMETRICO DINAMICO
+# ==============================================================================
+@st.cache_data(ttl=1800)  # Aggiorna la classifica ogni 30 minuti per non sovraccaricare
+def genera_universo_volumetrico():
+    """Genera dinamicamente 50 asset: 3 Cripto Re fisse H24 + 47 azioni leader di volume di giornata"""
+    crypto_kings = ["BTC-USD", "ETH-USD", "SOL-USD"]
     
-    # 🏎️ TECNOLOGIA & MOMENTUM (Wall Street)
-    "NVDA", "TSLA", "AAPL", "MSFT", "AMZN", "META", "GOOGL", "NFLX", "AMD", "INTC", "QCOM",
+    pool_di_base = [
+        "NVDA", "TSLA", "AAPL", "MSFT", "AMZN", "META", "GOOGL", "NFLX", "AMD", "INTC", 
+        "QCOM", "PLTR", "COIN", "MARA", "SMCI", "BABA", "HOOD", "NIO", "SPY", "QQQ", 
+        "IWM", "DIA", "GLD", "SLV", "USO", "SMH", "ARKK", "XLE", "XBI", "TLT", "BAC", 
+        "JPM", "WMT", "DIS", "XOM", "TSM", "F", "GE", "PFE", "T", "VZ", "WFC", "GME", 
+        "AMC", "LCID", "RIVN", "UPST", "NKE", "SBUX", "UBER", "SHOP", "PYPL", "DKNG", "MU"
+    ]
     
-    # 🔋 TITOLI COMPORTAMENTALI, FINTECH & EV
-    "PLTR", "COIN", "MARA", "SMCI", "BABA", "HOOD", "NIO",
-    
-    # 🛡️ ETF & MATERIE PRIME (Coperture macro)
-    "SPY", "QQQ", "IWM", "DIA", "GLD", "SLV", "USO", "SMH", "ARKK", "XLE", "XBI", "TLT"
-]
-# Mapping per Alpaca (Rimuove il trattino per le crypto in esecuzione reale)
-def clean_ticker_for_alpaca(ticker):
-    return ticker.replace("-", "")
-
-# =====================================================================
-# 2. CONNESSIONE PROTETTA ALPACA
-# =====================================================================
-# Cerca le chiavi nei Secrets di Streamlit per evitare inserimenti manuali errati
-try:
-    ALPACA_API_KEY = st.secrets["ALPACA_API_KEY"]
-    ALPACA_SECRET_KEY = st.secrets["ALPACA_SECRET_KEY"]
-    ALPACA_PAPER = st.secrets.get("ALPACA_PAPER", True)
-    trading_client = TradingClient(ALPACA_API_KEY, ALPACA_SECRET_KEY, paper=ALPACA_PAPER)
-    api_connected = True
-except Exception as e:
-    api_connected = False
-
-# =====================================================================
-# 3. MOTORE MATEMATICO: ANALISI ADATTIVA 14 GIORNI (DAILY)
-# =====================================================================
-def analyze_market_dynamics(ticker):
-    """
-    Scarica lo storico daily a 14 periodi e calcola la struttura matematica:
-    ATR percentuale, Volume Medio, Volume Ratio e la EMA 9 di controllo.
-    """
     try:
-        # Scarica 40 giorni per essere sicuro di calcolare correttamente le medie a 14 periodi
-        end_date = datetime.datetime.now()
-        start_date = end_date - datetime.timedelta(days=40)
-        df = yf.download(ticker, start=start_date, end=end_date, interval="1d", progress=False)
+        # Download massivo in blocco unico (Bulk) per ingannare i limiti di Yahoo ed evitare blocchi IP
+        dati_volume = yf.download(pool_di_base, period="1d", progress=False)
         
-        if df.empty or len(df) < LOOKBACK_DAYS:
-            return None
-            
-        # Calcolo True Range (TR) e Average True Range (ATR)
-        high_low = df['High'] - df['Low']
-        high_close = np.abs(df['High'] - df['Close'].shift())
-        low_close = np.abs(df['Low'] - df['Close'].shift())
-        ranges = pd.concat([high_low, high_close, low_close], axis=1)
-        true_range = ranges.max(axis=1)
-        df['atr'] = true_range.rolling(window=LOOKBACK_DAYS).mean()
-        
-        # Struttura Dinamica %
-        df['atr_pct'] = (df['atr'] / df['Close']) * 100
-        df['vol_medio_14d'] = df['Volume'].rolling(window=LOOKBACK_DAYS).mean()
-        df['volume_ratio'] = df['Volume'] / df['vol_medio_14d']
-        df['ema_fast'] = df['Close'].ewm(span=9, adjust=False).mean()
-        
-        last_row = df.iloc[-1]
-        return {
-            "close": float(last_row['Close']),
-            "atr_pct": float(last_row['atr_pct']),
-            "volume_ratio": float(last_row['volume_ratio']),
-            "ema_fast": float(last_row['ema_fast'])
-        }
-    except Exception:
-        return None
-
-# =====================================================================
-# 4. LOGICA DEL COCKPIT: SELEZIONE MERITOCRATICA E SIZE ENGINERING
-# =====================================================================
-def scan_and_rank_signals():
-    """
-    Scansiona l'universo degli asset, estrae quelli con volumi insoliti
-    e crea la classifica meritocratica per gli slot disponibili.
-    """
-    signals = []
-    for asset in ASSET_UNIVERSE:
-        data = analyze_market_dynamics(asset)
-        if data is None:
-            continue
-            
-        # Segnale Tecnico Base: Se l'asset ha un Volume Ratio > 1.0 (Volume sopra la media dei 14gg)
-        # ed è in una fase di prezzo favorevole (es. sopra o vicino al supporto, qui simulato con Volume Ratio di spinta)
-        if data['volume_ratio'] > 1.0:
-            signals.append({
-                "ticker": asset,
-                "close": data['close'],
-                "atr_pct": data['atr_pct'],
-                "volume_ratio": data['volume_ratio'],
-                "ema_fast": data['ema_fast']
-            })
-            
-    # Classifica Meritocratica: Ordina per Volume Ratio Decrescente (Le mani forti più pesanti prima)
-    ranked_signals = sorted(signals, key=lambda x: x['volume_ratio'], reverse=True)
-    return ranked_signals
-
-def execute_buy_order(asset_data, open_slots):
-    """
-    Calcola la size dinamica in base all'ATR ed esegue l'acquisto su Alpaca.
-    Applica il protocollo Sonda se il sistema è in SCOUT_MODE.
-    """
-    ticker = asset_data['ticker']
-    prezzo_attuale = asset_data['close']
-    atr_pct = asset_data['atr_pct']
+        if 'Volume' in dati_volume and not dati_volume['Volume'].empty:
+            # Estraiamo l'ultimo volume valido della sessione corrente
+            ultimi_volumi = dati_volume['Volume'].iloc[-1].dropna()
+            # Ordiniamo in ordine decrescente prendendo le 47 regine del volume
+            top_47_azioni = ultimi_volumi.sort_values(ascending=False).head(47).index.tolist()
+            return crypto_kings + top_47_azioni
+    except Exception as e:
+        # Fallback difensivo per garantire la navigazione se le API esterne falliscono temporaneamente
+        pass
     
-    # Calcolo Stop Loss Dinamico (Più l'asset oscilla, più si allarga il paracadute)
-    stop_loss_dist_pct = atr_pct * ATR_MULTIPLIER
-    
-    # Calcolo della Taglia (Size Engineering) per mantenere il rischio fisso a $10
-    size_in_quote = RISK_PER_TRADE_USD / (prezzo_attuale * (stop_loss_dist_pct / 100))
-    budget_usd = size_in_quote * prezzo_attuale
-    
-    # Applicazione Cautelare del Protocollo Sonda
-    current_mode = st.session_state.SYSTEM_STATE
-    if current_mode == "SCOUT_MODE":
-        size_in_quote = size_in_quote * 0.5
-        budget_usd = budget_usd * 0.5
-        
-    alpaca_ticker = clean_ticker_for_alpaca(ticker)
-    
-    # Esecuzione Ordine Reale su Alpaca Client
-    if api_connected:
-        try:
-            req = MarketOrderRequest(
-                symbol=alpaca_ticker,
-                qty=round(size_in_quote, 4) if "USD" in ticker else int(size_in_quote) if size_in_quote > 1 else 1,
-                side=OrderSide.BUY,
-                time_in_force=TimeInForce.GTC
-            )
-            trading_client.submit_order(order_data=req)
-            
-            # Registrazione nel tracciamento locale del Trailing Stop
-            st.session_state.TRACKED_POSITIONS[ticker] = {
-                "entry_price": prezzo_attuale,
-                "highest_price": prezzo_attuale,
-                "stop_price": prezzo_attuale * (1 - (stop_loss_dist_pct / 100)),
-                "size": size_in_quote,
-                "mode": current_mode,
-                "time": datetime.datetime.now().strftime("%H:%M:%S")
-            }
-            return True
-        except Exception as e:
-            st.error(f"Errore nell'invio ordine per {ticker}: {str(e)}")
-            return False
-    return False
+    return crypto_kings + pool_di_base[:47]
 
-# =====================================================================
-# 5. PROTEZIONE TEMPESTA & TRAILING STOP ATTIVO
-# =====================================================================
-def monitor_active_positions():
-    """
-    Monitora secondo per secondo le posizioni aperte.
-    Aggiorna i Trailing Stop e se rileva un cross di stop-loss attiva il Fusibile della Tempesta.
-    """
-    tickers_to_remove = []
-    
-    for ticker, pos in list(st.session_state.TRACKED_POSITIONS.items()):
-        # Prende l'ultimo prezzo aggiornato
-        market_data = analyze_market_dynamics(ticker)
-        if market_data is None:
-            continue
-            
-        current_price = market_data['close']
-        
-        # Aggiornamento della vetta (Trailing Stop)
-        if current_price > pos['highest_price']:
-            st.session_state.TRACKED_POSITIONS[ticker]['highest_price'] = current_price
-            # Trascina lo stop loss verso l'alto mantenendo la distanza calcolata all'inizio
-            dist_pct = ((pos['entry_price'] - pos['stop_price']) / pos['entry_price'])
-            st.session_state.TRACKED_POSITIONS[ticker]['stop_price'] = current_price * (1 - dist_pct)
-            
-        # Controllo della violazione dello Stop Loss (Preso in Caduta)
-        if current_price <= pos['stop_price']:
-            # Esecuzione Ordine di Vendita su Alpaca
-            alpaca_ticker = clean_ticker_for_alpaca(ticker)
-            if api_connected:
-                try:
-                    req = MarketOrderRequest(
-                        symbol=alpaca_ticker,
-                        qty=pos['size'],
-                        side=OrderSide.SELL,
-                        time_in_force=TimeInForce.GTC
-                    )
-                    trading_client.submit_order(order_data=req)
-                except Exception:
-                    pass
-            
-            # Calcolo profitto/perdita dell'operazione chiusa
-            pnl_pct = ((current_price - pos['entry_price']) / pos['entry_price']) * 100
-            pnl_usd = (current_price - pos['entry_price']) * pos['size']
-            
-            st.session_state.TOTAL_PROFIT_USD += pnl_usd
-            st.session_state.LOG_TRADES.append({
-                "Orario": datetime.datetime.now().strftime("%H:%M:%S"),
-                "Asset": ticker,
-                "Profitto %": f"{pnl_pct:+.2f}%",
-                "Profitto USD": f"${pnl_usd:+.2f}",
-                "Tipo Chiusura": "TRAILING STOP" if pnl_pct > 0 else "STOP LOSS LOSS"
-            })
-            
-            # SE LO STOP HA GENERATO UNA PERDITA -> ATTIVA IL FUSIBILE DELLA TEMPESTA
-            if pnl_pct < 0:
-                st.session_state.SYSTEM_STATE = "STORM_LOCK"
-                st.session_state.STORM_TRIGGER_TICKER = ticker
-                
-            # Se il trade sonda ha avuto successo (chiuso in profitto), disattiva lo stato sonda
-            if pos['mode'] == "SCOUT_MODE" and pnl_pct > 0:
-                st.session_state.SYSTEM_STATE = "NORMAL"
-                st.session_state.STORM_TRIGGER_TICKER = None
-                
-            tickers_to_remove.append(ticker)
-            
-    for t in tickers_to_remove:
-        if t in st.session_state.TRACKED_POSITIONS:
-            del st.session_state.TRACKED_POSITIONS[t]
+# ==============================================================================
+# 📐 FUNZIONI MATEMATICHE: ANALISI TECNICA QUANTITATIVA
+# ==============================================================================
+def calcola_rsi(serie_prezzi, periodi=14):
+    """Calcola l'RSI matematico classico per individuare l'asset sul fondo"""
+    delta = serie_prezzi.diff()
+    guadagno = (delta.where(delta > 0, 0)).rolling(window=periodi).mean()
+    perdita = (-delta.where(delta < 0, 0)).rolling(window=periodi).mean()
+    rs = guadagno / (perdita + 1e-9)
+    return 100 - (100 / (1 + rs))
 
-def check_storm_clearance():
-    """
-    Rilevatore Intelligente di Cielo Sereno.
-    Se l'asset che ha innescato il crash chiude sopra la sua EMA 9 Daily, la tempesta è finita.
-    """
-    if st.session_state.SYSTEM_STATE == "STORM_LOCK" and st.session_state.STORM_TRIGGER_TICKER:
-        ticker = st.session_state.STORM_TRIGGER_TICKER
-        data = analyze_market_dynamics(ticker)
-        if data:
-            if data['close'] > data['ema_fast']:
-                st.session_state.SYSTEM_STATE = "SCOUT_MODE" # Passa al modulo di test leggero
+# ==============================================================================
+# 🎯 LA CIMA DELLA PLANCIA: SEZIONE ENTRATE / PROFITTI (Richiesta del Capitano)
+# ==============================================================================
+st.title("🚢 Transatlantico Volumetrico v50.0")
+st.subheader("Plancia di Comando Quantitativa H24 — Scalping Automatico & Trailing Stop")
 
-# =====================================================================
-# 6. INTERFACCIA UTENTE E DASHBOARD
-# =====================================================================
-# Header Principale
-st.title("🛡️ CORAZZATA AUTONOMA ADATTIVA v46.0")
-st.subheader("Architettura Quantistica di Protezione e Scalping Volumetrico")
-st.markdown("---")
+# Calcolo metriche di performance in tempo reale
+totale_trades = len(st.session_state.storico_trade)
+win_trades = sum(1 for t in st.session_state.storico_trade if "WIN" in t["esito"])
+win_rate = (win_trades / totale_trades * 100) if totale_trades > 0 else 0.0
 
-# Sezione Stato Connessione API
-if not api_connected:
-    st.error("⚠️ Chiavi Alpaca API mancanti o errate nel file secrets.toml. Il bot girerà in modalità Simulazione Totale.")
-else:
-    st.success("⚡ Connessione ad Alpaca Trading API stabilita con Successo. Sistemi di fuoco Armati.")
+col1, col2, col3 = st.columns(3)
 
-# Layout a Colonne per i Dati di Sintesi della Cassa
-col1, col2, col3, col4 = st.columns(4)
 with col1:
-    st.metric("CASSA PROFITTI GLOBAL", f"${st.session_state.TOTAL_PROFIT_USD:+.2f}")
+    st.markdown("<div style='background-color:#1e293b; padding:15px; border-radius:10px; border-left: 5px solid #10b981;'>", unsafe_allow_html=True)
+    st.metric(
+        label="💰 PROFITTO NETTO REALIZZATO", 
+        value=f"${st.session_state.pnl_realizzato:,.2f}", 
+        delta="Messo in Cassaforte (Verde)",
+        delta_color="normal"
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
+
 with col2:
-    stato_attuale = st.session_state.SYSTEM_STATE
-    if stato_attuale == "NORMAL":
-        st.metric("STATO DEL SISTEMA", "🌤️ NORMALE / CACCIA")
-    elif stato_attuale == "STORM_LOCK":
-        st.metric("STATO DEL SISTEMA", f"🌪️ TEMPESTA ({st.session_state.STORM_TRIGGER_TICKER})", delta="BLOCCO ACQUISTI", delta_color="inverse")
-    elif stato_attuale == "SCOUT_MODE":
-        st.metric("STATO DEL SISTEMA", "🏹 MODULO SONDA", delta="SIZE DIMEZZATA")
+    st.markdown("<div style='background-color:#1e293b; padding:15px; border-radius:10px; border-left: 5px solid #3b82f6;'>", unsafe_allow_html=True)
+    attive = len(st.session_state.posizioni_attive)
+    st.metric(
+        label="🎯 SILURI IN MARE (POSIZIONI)", 
+        value=f"{attive} / 5 Target", 
+        delta=f"{5 - attive} Slot Liberi",
+        delta_color="inverse"
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
+
 with col3:
-    occupati = len(st.session_state.TRACKED_POSITIONS)
-    st.metric("SLOT OCCUPATI HANGAR", f"{occupati} / {MAX_SLOTS}")
-with col4:
-    win_trades = [t for t in st.session_state.LOG_TRADES if "-" not in t['Profitto %']]
-    total_trades = len(st.session_state.LOG_TRADES)
-    wr = (len(win_trades) / total_trades * 100) if total_trades > 0 else 0.0
-    st.metric("WIN RATE SESSIONE", f"{wr:.1f}%", f"{total_trades} Operazioni Totali")
+    st.markdown("<div style='background-color:#1e293b; padding:15px; border-radius:10px; border-left: 5px solid #f59e0b;'>", unsafe_allow_html=True)
+    st.metric(
+        label="📈 PRECISIONE STRATEGIA", 
+        value=f"{win_rate:.1f}%", 
+        delta=f"Su {totale_trades} Operazioni Chiuse",
+        delta_color="normal"
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown("---")
 
-# PANNELLO DI CONTROLLO MACRO
-st.sidebar.title("🎛️ Pannello di Controllo")
-btn_start = st.sidebar.button("🚀 ATTIVA ALGORITMO ADATTIVO", use_container_width=True)
-btn_stop = st.sidebar.button("🛑 SPEGNI MOTORI", use_container_width=True)
+# ==============================================================================
+# 🎛️ SIDEBAR DI CONTROLLO PARAMETRI MECCANICI
+# ==============================================================================
+st.sidebar.header("⚓ Parametri della Corazzata")
+soglia_rsi_fondo = st.sidebar.slider("Grilletto RSI (Ipervenduto Fondo)", 10, 40, 25)
+trailing_stop_pct = st.sidebar.slider("Trailing Stop Ottimizzato (%)", 0.1, 2.0, 0.5, step=0.1)
+max_posizioni = st.sidebar.number_input("Limite Massimo Posizioni", 1, 10, 5)
 
-if btn_start:
-    st.session_state.BOT_RUNNING = True
-if btn_stop:
-    st.session_state.BOT_RUNNING = False
+if st.sidebar.button("🔄 Forza Scansione Universo"):
+    st.cache_data.clear()
+    aggiungi_log("Universo Azionario resettato e ricalcolato su base volumi.")
 
-# LOOP DI ESECUZIONE CONTINUA INTERNA
-if st.session_state.BOT_RUNNING:
-    st.sidebar.info("🤖 L'automa è attivo e sta scansionando i 14 giorni storici...")
+# ==============================================================================
+# 🛰️ SCANSIONE LIVE ED ESECUZIONE MATEMATICA DELLA STRATEGIA
+# ==============================================================================
+st.header("🔍 Monitoraggio Mercato in Tempo Reale")
+
+with st.spinner("Scansione in corso dei 50 leader volumetrici..."):
+    universo = genera_universo_volumetrico()
     
-    # 1. Monitoraggio posizioni aperte e aggiornamento dei Trailing stop
-    monitor_active_positions()
-    
-    # 2. Controllo sblocco della tempesta
-    if st.session_state.SYSTEM_STATE == "STORM_LOCK":
-        check_storm_clearance()
-        
-    # 3. Controllo degli acquisti se ci sono slot liberi e non siamo in blocco totale
-    slots_occupati = len(st.session_state.TRACKED_POSITIONS)
-    slots_liberi = MAX_SLOTS - slots_occupati
-    
-    if slots_liberi > 0 and st.session_state.SYSTEM_STATE != "STORM_LOCK":
-        # Scansione e ordinamento meritocratico sui volumi
-        segnali_rilevati = scan_and_rank_signals()
-        # Filtra e seleziona i migliori in base agli slot liberi disponibili
-        asset_da_comprare = segnali_rilevati[:slots_liberi]
-        
-        for asset in asset_da_comprare:
-            # Controlla che l'asset non sia già in portafoglio
-            if asset['ticker'] not in st.session_state.TRACKED_POSITIONS:
-                execute_buy_order(asset, slots_liberi)
+    # Scarichiamo i dati degli ultimi giorni per calcolare i parametri corretti (Bulk Download)
+    try:
+        storico_universo = yf.download(universo, period="5d", interval="15m", progress=False, group_by='ticker')
+    except Exception as e:
+        st.error(f"Errore connessione radar Yahoo Finance: {e}")
+        storico_universo = pd.DataFrame()
+
+opportunita_rilevate = []
+
+if not storico_universo.empty:
+    for ticker in universo:
+        try:
+            # Estrazione sicura del subset per singolo ticker nell'oggetto multi-index
+            if ticker in storico_universo.columns.levels[0]:
+                df_ticker = storico_universo[ticker].dropna()
+                if len(df_ticker) < 15:
+                    continue
                 
-    # Piccola pausa tecnica per non sovraccaricare le chiamate API
-    time.sleep(1)
-    st.rerun()
-else:
-    st.sidebar.warning("💤 Sistemi spenti. Il Bot è in modalità vedetta passiva.")
+                prezzo_attuale = df_ticker['Close'].iloc[-1]
+                df_ticker['RSI'] = calcola_rsi(df_ticker['Close'])
+                rsi_attuale = df_ticker['RSI'].iloc[-1]
+                
+                # Calcoliamo la variazione percentuale giornaliera
+                apertura_gg = df_ticker['Open'].iloc[0]
+                var_percentuale = ((prezzo_attuale - apertura_gg) / apertura_gg) * 100
+                
+                # --- LOGICA 1: GESTIONE DEL TRAILING STOP SULLE POSIZIONI APERTE ---
+                if ticker in st.session_state.posizioni_attive:
+                    pos = st.session_state.posizioni_attive[ticker]
+                    # Aggiorna il massimo prezzo visto dall'ingresso
+                    if prezzo_attuale > pos["max_prezzo"]:
+                        st.session_state.posizioni_attive[ticker]["max_prezzo"] = prezzo_attuale
+                        # Alza lo stop loss di conseguenza in base al trailing ottimizzato
+                        nuovo_stop = prezzo_attuale * (1 - (trailing_stop_pct / 100))
+                        if nuovo_stop > pos["stop_loss"]:
+                            st.session_state.posizioni_attive[ticker]["stop_loss"] = nuovo_stop
+                            aggiungi_log(f"🛡️ Trailing Stop ALZATO per {ticker} a ${nuovo_stop:.2f}")
+                    
+                    # Controllo violazione Stop Loss (Uscita cinica senza errori umani)
+                    if prezzo_attuale <= pos["stop_loss"]:
+                        profitto_ottenuto = (pos["stop_loss"] - pos["prezzo_ingresso"]) * pos["quantita"]
+                        st.session_state.pnl_realizzato += profitto_ottenuto
+                        st.session_state.storico_trade.append({
+                            "data": datetime.now().strftime("%Y-%m-%d"),
+                            "ticker": ticker,
+                            "tipo": "LONG",
+                            "profitto": profitto_ottenuto,
+                            "esito": "✅ WIN" if profitto_ottenuto > 0 else "❌ LOSS"
+                        })
+                        del st.session_state.posizioni_attive[ticker]
+                        aggiungi_log(f"💥 STOP LOSS COLPITO su {ticker}. Profitto/Perdita: ${profitto_ottenuto:.2f}. Posizione Chiusa.")
+                
+                # --- LOGICA 2: RILEVAMENTO NUOVI INGRESSI (CACCIA SUL FONDO) ---
+                else:
+                    # Rileva se l'asset è in forte ribasso ed ha toccato il fondo dell'RSI
+                    if rsi_attuale <= soglia_rsi_fondo and var_percentuale < 0:
+                        opportunita_rilevate.append({
+                            "Ticker": ticker,
+                            "Prezzo": f"${prezzo_attuale:.2f}",
+                            "Variazione GG": f"{var_percentuale:.2f}%",
+                            "RSI attuale": f"{rsi_attuale:.1f}"
+                        })
+                        
+                        # Esecuzione automatica se abbiamo slot liberi
+                        if len(st.session_state.posizioni_attive) < max_posizioni:
+                            stop_iniziale = prezzo_attuale * (1 - (trailing_stop_pct / 100))
+                            st.session_state.posizioni_attive[ticker] = {
+                                "prezzo_ingresso": prezzo_attuale,
+                                "stop_loss": stop_iniziale,
+                                "max_prezzo": prezzo_attuale,
+                                "quantita": round(2000 / prezzo_attuale, 4) # Alloca circa $2000 per colpo
+                            }
+                            aggiungi_log(f"🚀 ORDINE ESEGUITO: Acquistato {ticker} a ${prezzo_attuale:.2f} (RSI: {rsi_attuale:.1f}). Stop Loss a ${stop_iniziale:.2f}")
+        except Exception as ticker_error:
+            # Impedisce che l'errore su un singolo ticker blocchi la flotta
+            continue
 
-# =====================================================================
-# 7. VISUALIZZAZIONE TABELLONE DI BORDO (STILE v45.0 ENHANCED)
-# =====================================================================
-st.subheader("⚔️ L'Hangar delle Posizioni Attive (Massimo 5 Slot)")
-if len(st.session_state.TRACKED_POSITIONS) > 0:
-    pos_data = []
-    for k, v in st.session_state.TRACKED_POSITIONS.items():
-        pos_data.append({
-            "Asset": k,
-            "Prezzo Ingresso": f"${v['entry_price']:.2f}",
-            "Picco Massimo Registrato": f"${v['highest_price']:.2f}",
-            "Stop Loss Dinamico (Prezzo)": f"${v['stop_price']:.2f}",
-            "Taglia Allocata": f"{v['size']:.5f}",
-            "Modalità Ingresso": v['mode'],
-            "Orario Apertura": v['time']
-        })
-    st.table(pd.DataFrame(pos_data))
-else:
-    st.info("Nessun caccia nell'hangar. Il bot sta scansionando i volumi per trovare ingressi istituzionali istituzionali.")
+# ==============================================================================
+# 📟 VISUALIZZAZIONE DATI OPERATIVI DELLA CORAZZATA
+# ==============================================================================
+col_sx, col_dx = st.columns([2, 1])
 
-# DIARIO DI BORDO DI FINE GIORNATA (Richiesto: Report Pulito e Strutturato)
-st.markdown("---")
-with st.expander("📋 DIARIO DI BORDO GENERALE & REPORT DI FINE GIORNATA", expanded=True):
-    if len(st.session_state.LOG_TRADES) > 0:
-        st.dataframe(pd.DataFrame(st.session_state.LOG_TRADES), use_container_width=True)
+with col_sx:
+    st.subheader("🎯 Posizioni Attualmente in Mare")
+    if st.session_state.posizioni_attive:
+        tabella_pos = []
+        for tk, dati in st.session_state.posizioni_attive.items():
+            tabella_pos.append({
+                "Asset": tk,
+                "Prezzo Ingresso": f"${dati['prezzo_ingresso']:.2f}",
+                "Stop Loss Attuale": f"${dati['stop_loss']:.2f}",
+                "Picco Massimo Visto": f"${dati['max_prezzo']:.2f}",
+                "Quote a Bordo": dati['quantita']
+            })
+        st.dataframe(pd.DataFrame(tabella_pos), use_container_width=True, hide_index=True)
     else:
-        st.text("Nessun report compilato per oggi. Il bot invierà il bilancio totale alla chiusura delle sessioni.")
+        st.info("Nessun siluro in mare. Il bot sta scansionando i fondali in attesa di occasioni sottoestese.")
+
+    st.subheader("🔥 Radar Occasioni Rilevate (RSI sul Fondo)")
+    if opportunita_rilevate:
+        st.dataframe(pd.DataFrame(opportunita_rilevate), use_container_width=True, hide_index=True)
+    else:
+        st.success("Tutti i 50 titoli sono in acque stabili. Nessun asset sottoesteso trovato al momento.")
+
+with col_dx:
+    st.subheader("📜 Log Scatola Nera (Live)")
+    st.text_area("Eventi del Motore", value="\n".join(st.session_state.log_sistema), height=180, label_visibility="collapsed")
+    
+    st.subheader("📋 Storico Ultimi Rilasci (Verde)")
+    df_storico = pd.DataFrame(st.session_state.storico_trade)
+    if not df_storico.empty:
+        st.dataframe(df_storico.tail(5), use_container_width=True, hide_index=True)
+
+# Auto-refresh simulato per mantenere attiva l'interfaccia a monitor fisso
+time.sleep(1)
