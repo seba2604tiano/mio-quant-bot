@@ -44,9 +44,7 @@ def genera_universo_volumetrico():
     return [
         "BTC-USD", "ETH-USD", "SOL-USD", "DOGE-USD", "SHIB-USD",
         "XRP-USD", "AVAX-USD", "ADA-USD", "LINK-USD", "DOT-USD",
-        "LTC-USD", "NEAR-USD", 
-        "FET-USD", "ICP-USD", "ATOM-USD", "ALGO-USD", "FIL-USD"
-    ]
+        "LTC-USD", "NEAR-USD", "FET-USD", "ICP-USD", "ATOM-USD", "ALGO-USD", "FIL-USD"]
 
 # ==============================================================================
 # 📐 FUNZIONI MATEMATICHE: ANALISI TECNICA QUANTITATIVA
