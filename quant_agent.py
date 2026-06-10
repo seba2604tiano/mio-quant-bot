@@ -4,10 +4,10 @@ import pandas as pd
 import numpy as np
 import time
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # ==============================================================================
-# 🚢 CONFIGURAZIONE PLANCIA STREAMLIT (v55.0)
+# 🚢 CONFIGURAZIONE PLANCIA STREAMLIT (v55.0 - Time-Decay Edition)
 # ==============================================================================
 st.set_page_config(
     page_title="🚢 Transatlantico v55.0 - Plancia Quant", 
@@ -20,8 +20,8 @@ if 'pnl_realizzato' not in st.session_state:
     st.session_state.pnl_realizzato = 1485.50  
 if 'posizioni_attive' not in st.session_state:
     st.session_state.posizioni_attive = {
-        "BTC-USD": {"prezzo_ingresso": 96200.0, "stop_loss": 95800.0, "max_prezzo": 96500.0, "quantita": 0.05, "trailing_attivo": True},
-        "NVDA": {"prezzo_ingresso": 135.20, "stop_loss": 134.50, "max_prezzo": 136.10, "quantita": 10, "trailing_attivo": False}
+        "BTC-USD": {"prezzo_ingresso": 96200.0, "stop_loss": 95800.0, "max_prezzo": 96500.0, "quantita": 0.05, "trailing_attivo": True, "orario_ingresso": datetime.now()},
+        "NVDA": {"prezzo_ingresso": 135.20, "stop_loss": 134.50, "max_prezzo": 136.10, "quantita": 10, "trailing_attivo": False, "orario_ingresso": datetime.now()}
     }
 if 'storico_trade' not in st.session_state:
     st.session_state.storico_trade = [
@@ -30,7 +30,7 @@ if 'storico_trade' not in st.session_state:
         {"data": "2026-06-09", "ticker": "AAPL", "tipo": "LONG", "profitto": -30.00, "esito": "❌ LOSS"},
     ]
 if 'log_sistema' not in st.session_state:
-    st.session_state.log_sistema = ["Sistemi avviati correttamente. In attesa dei mercati..."]
+    st.session_state.log_sistema = ["Sistemi avviati. Motore Time-Decay online. In attesa dei mercati..."]
 
 def aggiungi_log(messaggio):
     orario = datetime.now().strftime("%H:%M:%S")
@@ -71,7 +71,6 @@ def genera_universo_volumetrico():
 @st.cache_data(ttl=60)  
 def scarica_dati_radar(universo_tickers):
     """Scarica i dati aggirando i blocchi IP di Yahoo Finance usando un browser fittizio e tentativi multipli"""
-    # Mascheriamo la richiesta come se provenisse da un PC Windows con Chrome aggiornato
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -102,10 +101,10 @@ def calcola_rsi(serie_prezzi, periodi=14):
 # 🎯 PLANCIA SUPERIORE: SEZIONE METRICHE
 # ==============================================================================
 st.title("🚢 Transatlantico Volumetrico v55.0")
-st.subheader("Plancia di Comando Quantitativa H24 — Scalping Automatico & Trailing Stop")
+st.subheader("Plancia di Comando Quantitativa H24 — Scalping Lampo & Time-Stop")
 
 totale_trades = len(st.session_state.storico_trade)
-win_trades = sum(1 for t in st.session_state.storico_trade if "WIN" in t["esito"])
+win_trades = sum(1 for t in st.session_state.storico_trade if "WIN" in t["esito"] or "LAMPO" in t["esito"])
 win_rate = (win_trades / totale_trades * 100) if totale_trades > 0 else 0.0
 
 col1, col2, col3 = st.columns(3)
@@ -117,7 +116,7 @@ with col1:
 with col2:
     st.markdown("<div style='background-color:#1e293b; padding:15px; border-radius:10px; border-left: 5px solid #3b82f6;'>", unsafe_allow_html=True)
     attive = len(st.session_state.posizioni_attive)
-    st.metric(label="🎯 SILURI IN MARE (POSIZIONI)", value=f"{attive} / 5 Target", delta=f"{5 - attive} Slot Liberi", delta_color="inverse")
+    st.metric(label="🎯 SILURI IN MARE (POSIZIONI)", value=f"{attive} / {st.session_state.get('max_pos_sidebar', 5)} Target", delta=f"{st.session_state.get('max_pos_sidebar', 5) - attive} Slot Liberi", delta_color="inverse")
     st.markdown("</div>", unsafe_allow_html=True)
 
 with col3:
@@ -133,6 +132,7 @@ st.markdown("---")
 st.sidebar.header("⚓ Parametri Ingressi")
 soglia_rsi_fondo = st.sidebar.slider("Grilletto RSI (Ipervenduto)", 10, 40, 25)
 max_posizioni = st.sidebar.number_input("Limite Massimo Posizioni", 1, 10, 5)
+st.session_state.max_pos_sidebar = max_posizioni # Salva per la UI in alto
 
 st.sidebar.markdown("---")
 st.sidebar.header("🎯 Il Trio Trailing (Scalping)")
@@ -140,12 +140,17 @@ trail_attivazione = st.sidebar.slider("1. Soglia Attivazione (%)", 0.05, 1.0, 0.
 trail_distanza = st.sidebar.slider("2. Distanza Stop (%)", 0.1, 2.0, 0.30, step=0.05)
 trail_passo = st.sidebar.slider("3. Passo Aggiornamento (%)", 0.01, 0.5, 0.05, step=0.01)
 
+st.sidebar.markdown("---")
+st.sidebar.header("⚡ Difese Temporali (NEW)")
+tp_lampo_pct = st.sidebar.slider("4. Take-Profit Lampo (%)", 0.1, 2.0, 0.40, step=0.05)
+time_stop_minuti = st.sidebar.slider("5. Time-Stop Uscita (Minuti)", 5, 120, 15, step=1)
+
 if st.sidebar.button("🔄 Forza Scansione Universo"):
     st.cache_data.clear()
     aggiungi_log("Universo Azionario e Radar ricalcolati da zero.")
 
 # ==============================================================================
-# 🛰️ RADAR & LOGICA DI TRADING (TRIO TRAILING SYSTEM)
+# 🛰️ RADAR & LOGICA DI TRADING (TRIO TRAILING + TIME-DECAY)
 # ==============================================================================
 st.header("🔍 Monitoraggio Mercato in Tempo Reale")
 
@@ -170,14 +175,49 @@ if not storico_universo.empty:
                 apertura_gg = df_ticker['Open'].iloc[0]
                 var_percentuale = ((prezzo_attuale - apertura_gg) / apertura_gg) * 100
                 
-                # --- CORE LOGIC: GESTIONE POSIZIONI ATTIVE + TRIO TRAILING ---
+                # --- CORE LOGIC: GESTIONE POSIZIONI ATTIVE + TIME-DECAY ---
                 if ticker in st.session_state.posizioni_attive:
                     pos = st.session_state.posizioni_attive[ticker]
                     rendimento_attuale_pct = ((prezzo_attuale - pos["prezzo_ingresso"]) / pos["prezzo_ingresso"]) * 100
                     
                     if "trailing_attivo" not in pos:
                         pos["trailing_attivo"] = False
+                    if "orario_ingresso" not in pos:
+                        pos["orario_ingresso"] = datetime.now()
 
+                    minuti_trascorsi = (datetime.now() - pos["orario_ingresso"]).total_seconds() / 60.0
+
+                    # -------------------------------------------------------------
+                    # 🚀 VARIANTE A: L'ARTIGLIO (Take-Profit Lampo)
+                    # -------------------------------------------------------------
+                    if rendimento_attuale_pct >= tp_lampo_pct:
+                        profitto_ottenuto = (prezzo_attuale - pos["prezzo_ingresso"]) * pos["quantita"]
+                        st.session_state.pnl_realizzato += profitto_ottenuto
+                        st.session_state.storico_trade.append({
+                            "data": datetime.now().strftime("%Y-%m-%d"),
+                            "ticker": ticker, "tipo": "LONG", "profitto": profitto_ottenuto,
+                            "esito": "⚡ WIN LAMPO"
+                        })
+                        del st.session_state.posizioni_attive[ticker]
+                        aggiungi_log(f"⚡ TP LAMPO: Target colpito su {ticker}! Profitto: +${profitto_ottenuto:.2f}")
+                        continue # Salta il resto della logica, l'ordine è chiuso!
+
+                    # -------------------------------------------------------------
+                    # ⏱️ VARIANTE B: IL CRONOMETRO (Time-Stop d'emergenza)
+                    # -------------------------------------------------------------
+                    elif minuti_trascorsi >= time_stop_minuti:
+                        profitto_ottenuto = (prezzo_attuale - pos["prezzo_ingresso"]) * pos["quantita"]
+                        st.session_state.pnl_realizzato += profitto_ottenuto
+                        st.session_state.storico_trade.append({
+                            "data": datetime.now().strftime("%Y-%m-%d"),
+                            "ticker": ticker, "tipo": "LONG", "profitto": profitto_ottenuto,
+                            "esito": "⏳ TIME-OUT WIN" if profitto_ottenuto > 0 else "⏳ TIME-OUT LOSS"
+                        })
+                        del st.session_state.posizioni_attive[ticker]
+                        aggiungi_log(f"⏱️ TIME-STOP: {ticker} in stallo da {int(minuti_trascorsi)} min. Posizione liquidata. Esito: ${profitto_ottenuto:.2f}")
+                        continue # Salta il resto della logica, l'ordine è chiuso!
+
+                    # -------------------------------------------------------------
                     # Componente 1: Attivazione del Trailing
                     if not pos["trailing_attivo"] and rendimento_attuale_pct >= trail_attivazione:
                         st.session_state.posizioni_attive[ticker]["trailing_attivo"] = True
@@ -205,7 +245,7 @@ if not storico_universo.empty:
                             "ticker": ticker,
                             "tipo": "LONG",
                             "profitto": profitto_ottenuto,
-                            "esito": "✅ WIN" if profitto_ottenuto > 0 else "❌ LOSS"
+                            "esito": "✅ WIN (Trail)" if profitto_ottenuto > 0 else "❌ LOSS (Stop)"
                         })
                         del st.session_state.posizioni_attive[ticker]
                         aggiungi_log(f"💥 SCALPING EXIT: Stop colpito su {ticker}. Esito: ${profitto_ottenuto:.2f}")
@@ -222,7 +262,8 @@ if not storico_universo.empty:
                             st.session_state.posizioni_attive[ticker] = {
                                 "prezzo_ingresso": prezzo_attuale, "stop_loss": stop_iniziale,
                                 "max_prezzo": prezzo_attuale, "quantita": round(2000 / prezzo_attuale, 4),
-                                "trailing_attivo": False
+                                "trailing_attivo": False,
+                                "orario_ingresso": datetime.now()  # <--- Salva il momento dell'acquisto!
                             }
                             aggiungi_log(f"🚀 ENTRATA AUTOMATICA: {ticker} a ${prezzo_attuale:.2f} (RSI: {rsi_attuale:.1f})")
         except Exception:
@@ -241,10 +282,15 @@ with col_sx:
         tabella_pos = []
         for tk, dati in st.session_state.posizioni_attive.items():
             t_status = "ATTIVO ⚡" if dati.get("trailing_attivo", False) else "In attesa di soglia ⏳"
+            minuti_passati = int((datetime.now() - dati.get("orario_ingresso", datetime.now())).total_seconds() / 60)
+            
             tabella_pos.append({
-                "Asset": tk, "Prezzo Ingresso": f"${dati['prezzo_ingresso']:.2f}",
-                "Stop Loss Attuale": f"${dati['stop_loss']:.2f}", "Picco Massimo Visto": f"${dati['max_prezzo']:.2f}",
-                "Stato Trailing": t_status
+                "Asset": tk, 
+                "Ingresso": f"${dati['prezzo_ingresso']:.2f}",
+                "Stop Loss": f"${dati['stop_loss']:.2f}", 
+                "Max Visto": f"${dati['max_prezzo']:.2f}",
+                "Stato Trailing": t_status,
+                "Tempo in Mare": f"{minuti_passati} min"
             })
         st.dataframe(pd.DataFrame(tabella_pos), width='stretch', hide_index=True)
     else:
