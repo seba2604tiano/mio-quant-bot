@@ -43,7 +43,7 @@ def aggiungi_log(messaggio):
 # ==============================================================================
 @st.cache_data(ttl=1800)
 def genera_universo_volumetrico():
-    crypto_kings = ["BTC-USD", "ETH-USD", "SOL-USD"]
+    crypto_kings = ["BTC-USD", "ETH-USD", "SOL-USD", "DOGE-USD", "SHIB-USD", "XRP-USD", "AVAX-USD", "ADA-USD"]
     pool_di_base = [
         "NVDA", "TSLA", "AAPL", "MSFT", "AMZN", "META", "GOOGL", "NFLX", "AMD", "INTC", 
         "QCOM", "PLTR", "COIN", "MARA", "SMCI", "BABA", "HOOD", "NIO", "SPY", "QQQ", 
