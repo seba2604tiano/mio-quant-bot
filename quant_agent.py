@@ -43,15 +43,15 @@ def fmt_p(val):
     return f"${val:.4f}" if val < 5 else f"${val:.2f}"
 
 # ==============================================================================
-# 🌌 MOTORI: GENERAZIONE UNIVERSO GLOBAL CROSS-ASSET (45 TARGET)
+# 🌌 MOTORI: GENERAZIONE UNIVERSO GLOBAL CROSS-ASSET (45 TARGET CORRETTO)
 # ==============================================================================
 @st.cache_data(ttl=1800)
 def genera_universo_volumetrico():
-    """Restituisce il paniere diversificato di 45 asset per la VPS di MVPS"""
+    """Restituisce il paniere diversificato con i ticker crypto corretti per Yahoo"""
     crypto = [
         "BTC-USD", "ETH-USD", "SOL-USD", "DOGE-USD", "SHIB-USD",
         "XRP-USD", "AVAX-USD", "ADA-USD", "LINK-USD", "DOT-USD",
-        "LTC-USD", "UNI-USD", "NEAR-USD", "APT-USD", "SUI-USD",
+        "LTC-USD", "UNI1-USD", "NEAR-USD", "APT1-USD", "SUI1-USD",
         "FET-USD", "ICP-USD", "ATOM-USD", "ALGO-USD", "FIL-USD"
     ]
     
@@ -137,7 +137,7 @@ st.markdown("---")
 # ==============================================================================
 st.sidebar.header("⚓ Parametri Ingressi")
 soglia_rsi_fondo = st.sidebar.slider("Grilletto RSI (Ipervenduto)", 10, 40, 25)
-max_posizioni = st.sidebar.number_input("Limite Massimo Posizioni", 1, 10, 5)
+max_posizioni = st.sidebar.number_input("Limite Massimo Posizioni", 1, 15, 5)
 st.session_state.max_pos_sidebar = max_posizioni 
 
 st.sidebar.markdown("---")
@@ -275,7 +275,7 @@ if not storico_universo.empty:
         except Exception:
             continue
 else:
-    st.warning("⚠️ Radar disturbato da Yahoo Finance. Allineamento contromisure ECM in corso, i dati verranno recuperati automaticamente al prossimo ciclo...")
+    st.warning("⚠️ Radar disturbato da Yahoo Finance. Allineamento contromisure ECM in corso, i dati verranno recuperati automaticamente al prowessimo ciclo...")
 
 # ==============================================================================
 # 📟 VISUALIZZAZIONE INTERFACCIA
