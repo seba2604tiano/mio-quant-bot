@@ -9,7 +9,7 @@ import requests
 from datetime import datetime, timedelta
 
 # ==============================================================================
-# 🚢 CONFIGURAZIONE PLANCIA STREAMLIT (v61.0 - Elite Quant System - FIXED)
+# 🚢 CONFIGURAZIONE PLANCIA STREAMLIT (v61.0 - Elite Quant System - UPDATED)
 # ==============================================================================
 st.set_page_config(
     page_title="🚢 Transatlantico v61.0 - Plancia Quant", 
@@ -18,7 +18,7 @@ st.set_page_config(
 )
 
 # ==============================================================================
-# 💾 PERSISTENZA DATI SU FILE (Fix: salvataggio tra sessioni)
+# 💾 PERSISTENZA DATI SU FILE (Salvataggio permanente tra sessioni)
 # ==============================================================================
 SAVE_FILE = "transatlantico_stato.json"
 
@@ -96,8 +96,6 @@ def get_orario_ingresso(pos):
 
 # ==============================================================================
 # 🌌 MOTORI: GENERAZIONE UNIVERSO GLOBAL CROSS-ASSET (45 TARGET)
-# Fix: rimossi ticker non validi su Yahoo Finance (UNI1-USD, APT1-USD, SUI1-USD)
-# Sostituiti con ticker corretti: UNI-USD, APT-USD, SUI20947-USD → AGIX-USD
 # ==============================================================================
 @st.cache_data(ttl=1800)
 def genera_universo_volumetrico():
@@ -168,11 +166,7 @@ def classifica_asset(ticker):
         return "Nasdaq"
 
 def calcola_dimensione_posizione(prezzo_attuale, classe_asset, capitale_per_trade=2000):
-    """
-    Fix: dimensione posizione corretta per classe asset.
-    - Crypto/Nasdaq/Metalli: dimensione in unità = capitale / prezzo
-    - Forex: usa lotti micro (1000 unità base) invece di 2000 unità che sarebbe assurdo
-    """
+    """Calcola la dimensione della posizione corretta per classe asset."""
     if classe_asset == "Forex":
         return 1000.0  # 1 micro-lotto standard
     else:
@@ -188,7 +182,6 @@ totale_trades = len(st.session_state.storico_trade)
 win_trades = sum(1 for t in st.session_state.storico_trade if "WIN" in t["esito"] or "LAMPO" in t["esito"])
 win_rate = (win_trades / totale_trades * 100) if totale_trades > 0 else 0.0
 
-# Calcolo P&L floating sulle posizioni aperte
 pnl_floating = 0.0
 
 col1, col2, col3, col4 = st.columns(4)
@@ -211,7 +204,6 @@ with col3:
 
 with col4:
     st.markdown("<div style='background-color:#1e293b; padding:15px; border-radius:10px; border-left: 5px solid #a855f7;'>", unsafe_allow_html=True)
-    colore_floating = "normal" if pnl_floating >= 0 else "inverse"
     st.metric(label="📊 P&L FLOATING (aperto)", value=f"${pnl_floating:,.2f}", delta="Live (si aggiorna dopo scansione)")
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -242,7 +234,6 @@ st.sidebar.header("⚡ Moduli d'Uscita Rapida")
 tp_lampo_pct    = st.sidebar.slider("Take-Profit Lampo (%)",    0.1, 2.0,  0.40, step=0.05)
 time_stop_minuti = st.sidebar.slider("Time-Stop Uscita (Minuti)", 5, 120, 15,   step=1)
 
-# Fix: EMA ora parametrizzabile invece di fissa a 100
 st.sidebar.markdown("---")
 st.sidebar.header("📡 Scudo EMA")
 ema_periodi = st.sidebar.slider("Periodi EMA (Scudo Trend)", 20, 200, 50, step=5,
@@ -257,7 +248,6 @@ if st.sidebar.button("🔄 Forza Scansione Universo"):
 # ==============================================================================
 st.header("🔍 Monitoraggio e Puntamento di Precisione")
 
-# Auto-refresh ogni 60 secondi (Fix: il sistema si aggiorna automaticamente)
 try:
     from streamlit_autorefresh import st_autorefresh
     st_autorefresh(interval=60000, limit=None, key="radar_refresh")
@@ -270,12 +260,11 @@ with st.spinner("Scansione in corso del paniere Cross-Asset..."):
     storico_universo = scarica_dati_radar(tuple(universo))
 
 opportunita_rilevate = []
-posizioni_da_chiudere = []  # Fix: raccogliamo le chiusure e le eseguiamo fuori dal loop dict
+posizioni_da_chiudere = []  
 
 if not storico_universo.empty:
     for ticker in universo:
         try:
-            # Fix: gestione robusta dei livelli delle colonne MultiIndex
             col_levels = storico_universo.columns.get_level_values(0)
             if ticker not in col_levels:
                 continue
@@ -288,18 +277,16 @@ if not storico_universo.empty:
             df_ticker['RSI'] = calcola_rsi(df_ticker['Close'])
             rsi_attuale = float(df_ticker['RSI'].iloc[-1])
 
-            # Scudo EMA con periodi parametrizzati
             df_ticker['EMA'] = calcola_ema(df_ticker['Close'], ema_periodi)
             ema_attuale = float(df_ticker['EMA'].iloc[-1])
             macro_trend_rialzista = prezzo_attuale > ema_attuale
 
-            # Fix variazione intraday: usa la candela più vicina all'apertura della sessione corrente
             oggi = datetime.now().date()
             df_oggi = df_ticker[df_ticker.index.date == oggi] if hasattr(df_ticker.index, 'date') else df_ticker
             if len(df_oggi) >= 2:
                 apertura_gg = float(df_oggi['Open'].iloc[0])
             else:
-                apertura_gg = float(df_ticker['Open'].iloc[-10])  # fallback sicuro: ultime 10 candele
+                apertura_gg = float(df_ticker['Open'].iloc[-10])  
             var_percentuale = ((prezzo_attuale - apertura_gg) / apertura_gg) * 100
 
             classe_asset = classifica_asset(ticker)
@@ -314,15 +301,13 @@ if not storico_universo.empty:
             if ticker in st.session_state.posizioni_attive:
                 pos = st.session_state.posizioni_attive[ticker]
 
-                # Compatibilità con vecchi stati che hanno datetime invece di isoformat
                 orario_ingresso = get_orario_ingresso(pos)
                 minuti_trascorsi = (datetime.now() - orario_ingresso).total_seconds() / 60.0
                 rendimento_attuale_pct = ((prezzo_attuale - pos["prezzo_ingresso"]) / pos["prezzo_ingresso"]) * 100
 
-                if "trailing_attivo"  not in pos: pos["trailing_attivo"]  = False
+                if "trailing_attivo"   not in pos: pos["trailing_attivo"]  = False
                 if "break_even_attivo" not in pos: pos["break_even_attivo"] = False
 
-                # Aggiorna P&L floating (visualizzato nella metrica in alto)
                 pnl_floating += (prezzo_attuale - pos["prezzo_ingresso"]) * pos["quantita"]
 
                 # 🛡️ MODULO AUTO BREAK-EVEN
@@ -373,7 +358,7 @@ if not storico_universo.empty:
                     salva_stato()
                     posizione_chiusa = True
 
-                # MODULO C: TRAILING STOP (solo se posizione ancora aperta)
+                # MODULO C: TRAILING STOP 
                 if not posizione_chiusa:
                     if not pos["trailing_attivo"] and rendimento_attuale_pct >= trail_attivazione:
                         st.session_state.posizioni_attive[ticker]["trailing_attivo"] = True
@@ -387,10 +372,10 @@ if not storico_universo.empty:
                             nuovo_stop = prezzo_attuale * (1 - trail_distanza / 100)
                             if nuovo_stop > pos["stop_loss"]:
                                 st.session_state.posizioni_attive[ticker]["max_prezzo"] = prezzo_attuale
-                                st.session_state.posizioni_attive[ticker]["stop_loss"] = nuovo_stop
+                                st.session_state.posizioni_attive[ticker]["stop_loss"] = nuevo_stop
                                 aggiungi_log(f"🛡️ TRAILING UP: {ticker} → stop a {fmt_p(nuovo_stop)}")
 
-            # --- INGRESSI: CACCIA SUL FONDO CON SCUDO EMA ---
+            # --- INGRESSI: CACCIA SUL FONDO ---
             else:
                 if rsi_attuale <= soglia_rsi and var_percentuale < 0 and macro_trend_rialzista:
                     status_trend = "RIALZISTA ✅"
@@ -405,7 +390,6 @@ if not storico_universo.empty:
 
                     if len(st.session_state.posizioni_attive) < max_posizioni:
                         stop_iniziale = prezzo_attuale * (1 - trail_distanza / 100)
-                        # Fix: dimensione posizione corretta per classe asset
                         quantita = calcola_dimensione_posizione(prezzo_attuale, classe_asset)
                         st.session_state.posizioni_attive[ticker] = {
                             "prezzo_ingresso": prezzo_attuale,
@@ -414,37 +398,33 @@ if not storico_universo.empty:
                             "quantita": quantita,
                             "trailing_attivo": False,
                             "break_even_attivo": False,
-                            "orario_ingresso": datetime.now().isoformat()  # Fix: stringa ISO serializzabile
+                            "orario_ingresso": datetime.now().isoformat()  
                         }
                         aggiungi_log(f"🚀 ACQUISTO: {ticker} ({classe_asset}) @ {fmt_p(prezzo_attuale)} | Q: {quantita}")
 
         except Exception as e:
-            # Fix: log degli errori invece di inghiottirli silenziosamente
             aggiungi_log(f"⚠️ Errore su {ticker}: {type(e).__name__}: {e}")
             continue
 
 else:
     st.warning("⚠️ Radar disturbato da Yahoo Finance. Allineamento contromisure ECM in corso...")
 
-# Fix: chiusura posizioni fuori dal loop per evitare modifica del dict durante iterazione
+# Chiusura posizioni fuori dal loop
 for ticker in posizioni_da_chiudere:
     if ticker in st.session_state.posizioni_attive:
         del st.session_state.posizioni_attive[ticker]
 
-# Aggiorna metrica floating dopo il loop
-# (si aggiorna al prossimo rerun, è corretto)
-
 # ==============================================================================
-# 📊 EQUITY CURVE (Bonus: grafico PnL cumulativo storico)
+# 📊 EQUITY CURVE (Sintassi corretta: width='stretch')
 # ==============================================================================
 if len(st.session_state.storico_trade) > 1:
     with st.expander("📈 Equity Curve — Curva Profitto Cumulativo", expanded=False):
         df_eq = pd.DataFrame(st.session_state.storico_trade)
         df_eq["profitto_cumulativo"] = df_eq["profitto"].cumsum() + 1485.50
-        st.line_chart(df_eq[["profitto_cumulativo"]], use_container_width=True)
+        st.line_chart(df_eq[["profitto_cumulativo"]], width='stretch')
 
 # ==============================================================================
-# 📟 VISUALIZZAZIONE INTERFACCIA GRAFICA DI BORDO
+# 📟 VISUALIZZAZIONE INTERFACCIA GRAFICA DI BORDO (Sintassi corretta: width='stretch')
 # ==============================================================================
 col_sx, col_dx = st.columns([2, 1])
 
@@ -469,13 +449,13 @@ with col_sx:
                 "Stato Difese": t_status,
                 "Tempo in Mare": f"{minuti_passati} min"
             })
-        st.dataframe(pd.DataFrame(tabella_pos), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(tabella_pos), width='stretch', hide_index=True)
     else:
         st.info("Nessun siluro in mare. Radar in scansione profonda.")
 
     st.subheader("🔥 Radar Occasioni Rilevate (Approvate da Scudo EMA)")
     if opportunita_rilevate:
-        st.dataframe(pd.DataFrame(opportunita_rilevate), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(opportunita_rilevate), width='stretch', hide_index=True)
     else:
         st.success("Tutti gli asset idonei sono in acque sicure. Nessun segnale pulito filtrato dalla EMA al momento.")
 
@@ -487,6 +467,4 @@ with col_dx:
     st.subheader("📋 Storico Ultimi Rilasci")
     df_storico = pd.DataFrame(st.session_state.storico_trade)
     if not df_storico.empty:
-        st.dataframe(df_storico.tail(8), use_container_width=True, hide_index=True)
-
-# Fix: rimosso time.sleep(0.5) — bloccava il rendering senza benefici
+        st.dataframe(df_storico.tail(8), width='stretch', hide_index=True)
