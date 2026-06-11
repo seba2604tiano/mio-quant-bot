@@ -7,7 +7,7 @@ import requests
 from datetime import datetime, timedelta
 
 # ==============================================================================
-# 🚢 CONFIGURAZIONE PLANCIA STREAMLIT (v55.0 - Time-Decay Edition)
+# 🚢 CONFIGURAZIONE PLANCIA STREAMLIT (v55.0 - Global Cross-Asset Edition)
 # ==============================================================================
 st.set_page_config(
     page_title="🚢 Transatlantico v55.0 - Plancia Quant", 
@@ -30,7 +30,7 @@ if 'storico_trade' not in st.session_state:
         {"data": "2026-06-09", "ticker": "AAPL", "tipo": "LONG", "profitto": -30.00, "esito": "❌ LOSS"},
     ]
 if 'log_sistema' not in st.session_state:
-    st.session_state.log_sistema = ["Sistemi avviati. Motore Time-Decay online. In attesa dei mercati..."]
+    st.session_state.log_sistema = ["Sistemi avviati. Radar Global Cross-Asset (45 Bersagli) online."]
 
 def aggiungi_log(messaggio):
     orario = datetime.now().strftime("%H:%M:%S")
@@ -38,32 +38,38 @@ def aggiungi_log(messaggio):
     if len(st.session_state.log_sistema) > 30:
         st.session_state.log_sistema.pop()
 
+def fmt_p(val):
+    """Helper di bordo per formattare i prezzi senza perdere i pip del Forex o delle micro-crypto"""
+    return f"${val:.4f}" if val < 5 else f"${val:.2f}"
+
 # ==============================================================================
-# 🌌 MOTORI: GENERAZIONE UNIVERSO VOLUMETRICO DINAMICO (CACHED)
+# 🌌 MOTORI: GENERAZIONE UNIVERSO GLOBAL CROSS-ASSET (45 TARGET)
 # ==============================================================================
 @st.cache_data(ttl=1800)
 def genera_universo_volumetrico():
-    crypto_kings = ["BTC-USD", "ETH-USD", "SOL-USD"]
-    pool_di_base = [
-        "NVDA", "TSLA", "AAPL", "MSFT", "AMZN", "META", "GOOGL", "NFLX", "AMD", "INTC", 
-        "QCOM", "PLTR", "COIN", "MARA", "SMCI", "BABA", "HOOD", "NIO", "SPY", "QQQ", 
-        "IWM", "DIA", "GLD", "SLV", "USO", "SMH", "ARKK", "XLE", "XBI", "TLT", "BAC", 
-        "JPM", "WMT", "DIS", "XOM", "TSM", "F", "GE", "PFE", "T", "VZ", "WFC", "GME", 
-        "AMC", "LCID", "RIVN", "UPST", "NKE", "SBUX", "UBER", "SHOP", "PYPL", "DKNG", "MU"
+    """Restituisce il paniere diversificato di 45 asset per la VPS di MVPS"""
+    crypto = [
+        "BTC-USD", "ETH-USD", "SOL-USD", "DOGE-USD", "SHIB-USD",
+        "XRP-USD", "AVAX-USD", "ADA-USD", "LINK-USD", "DOT-USD",
+        "LTC-USD", "UNI-USD", "NEAR-USD", "APT-USD", "SUI-USD",
+        "FET-USD", "ICP-USD", "ATOM-USD", "ALGO-USD", "FIL-USD"
     ]
-    try:
-        # Applichiamo una sessione fittizia anche qui per sicurezza
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
-        session = requests.Session()
-        session.headers.update(headers)
-        dati_volume = yf.download(pool_di_base, period="1d", progress=False, session=session)
-        if 'Volume' in dati_volume and not dati_volume['Volume'].empty:
-            ultimi_volumi = dati_volume['Volume'].iloc[-1].dropna()
-            top_47_azioni = ultimi_volumi.sort_values(ascending=False).head(47).index.tolist()
-            return crypto_kings + top_47_azioni
-    except Exception:
-        pass
-    return crypto_kings + pool_di_base[:47]
+    
+    nasdaq = [
+        "NVDA", "TSLA", "AAPL", "AMD", "MSFT", 
+        "PLTR", "AMZN", "META", "GOOGL", "NFLX", 
+        "COIN", "MARA", "SMCI", "HOOD", "QCOM"
+    ]
+    
+    commodities = [
+        "GC=F", "SI=F", "CL=F", "GLD", "SLV"
+    ]
+    
+    forex = [
+        "EURUSD=X", "GBPUSD=X", "USDJPY=X", "AUDUSD=X", "USDCAD=X"
+    ]
+    
+    return crypto + nasdaq + commodities + forex
 
 # ==============================================================================
 # 🛡️ CONTROMISURE ECM: DOWNLOAD CON USER-AGENT ED EVASIONE RATE LIMIT
@@ -101,7 +107,7 @@ def calcola_rsi(serie_prezzi, periodi=14):
 # 🎯 PLANCIA SUPERIORE: SEZIONE METRICHE
 # ==============================================================================
 st.title("🚢 Transatlantico Volumetrico v55.0")
-st.subheader("Plancia di Comando Quantitativa H24 — Scalping Lampo & Time-Stop")
+st.subheader("Plancia di Comando Quantitativa H24 — Scalping Lampo & Time-Stop Global")
 
 totale_trades = len(st.session_state.storico_trade)
 win_trades = sum(1 for t in st.session_state.storico_trade if "WIN" in t["esito"] or "LAMPO" in t["esito"])
@@ -132,7 +138,7 @@ st.markdown("---")
 st.sidebar.header("⚓ Parametri Ingressi")
 soglia_rsi_fondo = st.sidebar.slider("Grilletto RSI (Ipervenduto)", 10, 40, 25)
 max_posizioni = st.sidebar.number_input("Limite Massimo Posizioni", 1, 10, 5)
-st.session_state.max_pos_sidebar = max_posizioni # Salva per la UI in alto
+st.session_state.max_pos_sidebar = max_posizioni 
 
 st.sidebar.markdown("---")
 st.sidebar.header("🎯 Il Trio Trailing (Scalping)")
@@ -141,13 +147,13 @@ trail_distanza = st.sidebar.slider("2. Distanza Stop (%)", 0.1, 2.0, 0.30, step=
 trail_passo = st.sidebar.slider("3. Passo Aggiornamento (%)", 0.01, 0.5, 0.05, step=0.01)
 
 st.sidebar.markdown("---")
-st.sidebar.header("⚡ Difese Temporali (NEW)")
+st.sidebar.header("⚡ Difese Temporali")
 tp_lampo_pct = st.sidebar.slider("4. Take-Profit Lampo (%)", 0.1, 2.0, 0.40, step=0.05)
 time_stop_minuti = st.sidebar.slider("5. Time-Stop Uscita (Minuti)", 5, 120, 15, step=1)
 
 if st.sidebar.button("🔄 Forza Scansione Universo"):
     st.cache_data.clear()
-    aggiungi_log("Universo Azionario e Radar ricalcolati da zero.")
+    aggiungi_log("Universo Cross-Asset e Radar ricalcolati da zero.")
 
 # ==============================================================================
 # 🛰️ RADAR & LOGICA DI TRADING (TRIO TRAILING + TIME-DECAY)
@@ -168,11 +174,11 @@ if not storico_universo.empty:
                 if len(df_ticker) < 15:
                     continue
                 
-                prezzo_attuale = df_ticker['Close'].iloc[-1]
+                prezzo_attuale = float(df_ticker['Close'].iloc[-1])
                 df_ticker['RSI'] = calcola_rsi(df_ticker['Close'])
-                rsi_attuale = df_ticker['RSI'].iloc[-1]
+                rsi_attuale = float(df_ticker['RSI'].iloc[-1])
                 
-                apertura_gg = df_ticker['Open'].iloc[0]
+                apertura_gg = float(df_ticker['Open'].iloc[0])
                 var_percentuale = ((prezzo_attuale - apertura_gg) / apertura_gg) * 100
                 
                 # --- CORE LOGIC: GESTIONE POSIZIONI ATTIVE + TIME-DECAY ---
@@ -200,7 +206,7 @@ if not storico_universo.empty:
                         })
                         del st.session_state.posizioni_attive[ticker]
                         aggiungi_log(f"⚡ TP LAMPO: Target colpito su {ticker}! Profitto: +${profitto_ottenuto:.2f}")
-                        continue # Salta il resto della logica, l'ordine è chiuso!
+                        continue 
 
                     # -------------------------------------------------------------
                     # ⏱️ VARIANTE B: IL CRONOMETRO (Time-Stop d'emergenza)
@@ -215,7 +221,7 @@ if not storico_universo.empty:
                         })
                         del st.session_state.posizioni_attive[ticker]
                         aggiungi_log(f"⏱️ TIME-STOP: {ticker} in stallo da {int(minuti_trascorsi)} min. Posizione liquidata. Esito: ${profitto_ottenuto:.2f}")
-                        continue # Salta il resto della logica, l'ordine è chiuso!
+                        continue 
 
                     # -------------------------------------------------------------
                     # Componente 1: Attivazione del Trailing
@@ -234,7 +240,7 @@ if not storico_universo.empty:
                             nuovo_stop = prezzo_attuale * (1 - (trail_distanza / 100))
                             if nuovo_stop > pos["stop_loss"]:
                                 st.session_state.posizioni_attive[ticker]["stop_loss"] = nuovo_stop
-                                aggiungi_log(f"🛡️ TRITTICO: Stop alzato su {ticker} a ${nuovo_stop:.2f} (Passo +{scostamento_passo_pct:.3f}% superato)")
+                                aggiungi_log(f"🛡️ TRITTICO: Stop alzato su {ticker} a {fmt_p(nuovo_stop)} (Passo +{scostamento_passo_pct:.3f}% superato)")
 
                     # Controllo ed esecuzione Stop Loss
                     if prezzo_attuale <= pos["stop_loss"]:
@@ -254,7 +260,7 @@ if not storico_universo.empty:
                 else:
                     if rsi_attuale <= soglia_rsi_fondo and var_percentuale < 0:
                         opportunita_rilevate.append({
-                            "Ticker": ticker, "Prezzo": f"${prezzo_attuale:.2f}",
+                            "Ticker": ticker, "Prezzo": fmt_p(prezzo_attuale),
                             "Variazione GG": f"{var_percentuale:.2f}%", "RSI attuale": f"{rsi_attuale:.1f}"
                         })
                         if len(st.session_state.posizioni_attive) < max_posizioni:
@@ -263,9 +269,9 @@ if not storico_universo.empty:
                                 "prezzo_ingresso": prezzo_attuale, "stop_loss": stop_iniziale,
                                 "max_prezzo": prezzo_attuale, "quantita": round(2000 / prezzo_attuale, 4),
                                 "trailing_attivo": False,
-                                "orario_ingresso": datetime.now()  # <--- Salva il momento dell'acquisto!
+                                "orario_ingresso": datetime.now()  
                             }
-                            aggiungi_log(f"🚀 ENTRATA AUTOMATICA: {ticker} a ${prezzo_attuale:.2f} (RSI: {rsi_attuale:.1f})")
+                            aggiungi_log(f"🚀 ENTRATA AUTOMATICA: {ticker} a {fmt_p(prezzo_attuale)} (RSI: {rsi_attuale:.1f})")
         except Exception:
             continue
 else:
@@ -286,9 +292,9 @@ with col_sx:
             
             tabella_pos.append({
                 "Asset": tk, 
-                "Ingresso": f"${dati['prezzo_ingresso']:.2f}",
-                "Stop Loss": f"${dati['stop_loss']:.2f}", 
-                "Max Visto": f"${dati['max_prezzo']:.2f}",
+                "Ingresso": fmt_p(dati['prezzo_ingresso']),
+                "Stop Loss": fmt_p(dati['stop_loss']), 
+                "Max Visto": fmt_p(dati['max_prezzo']),
                 "Stato Trailing": t_status,
                 "Tempo in Mare": f"{minuti_passati} min"
             })
