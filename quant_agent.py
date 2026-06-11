@@ -105,7 +105,7 @@ def genera_universo_volumetrico():
         "BTC-USD", "ETH-USD", "SOL-USD", "DOGE-USD", "SHIB-USD",
         "XRP-USD", "AVAX-USD", "ADA-USD", "LINK-USD", "DOT-USD",
         "LTC-USD", "UNI-USD", "NEAR-USD", "APT-USD", "FET-USD",
-        "ICP-USD", "ATOM-USD", "ALGO-USD", "FIL-USD", "MATIC-USD"
+        "ICP-USD", "ATOM-USD", "ALGO-USD", "FIL-USD", 
     ]
     nasdaq = [
         "NVDA", "TSLA", "AAPL", "AMD", "MSFT", 
