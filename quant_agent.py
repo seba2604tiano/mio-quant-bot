@@ -9,21 +9,23 @@ import requests
 from datetime import datetime, timedelta
 
 # ==============================================================================
-# 🚢 CONFIGURAZIONE PLANCIA STREAMLIT (v62.0 - Elite Native Auto-Refresh)
+# 🚢 CONFIGURAZIONE PLANCIA STREAMLIT (v63.0 - CASH 500$)
 # ==============================================================================
 st.set_page_config(
-    page_title="🚢 Transatlantico v62.0 - Plancia Quant", 
+    page_title="🚢 Transatlantico v63.0 - Cash 500$", 
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
+# Parametri di gestione capitale reale
+BUDGET_TOTALE = 500.0
+
 # ==============================================================================
-# 💾 PERSISTENZA DATI SU FILE (Salvataggio permanente tra sessioni)
+# 💾 PERSISTENZA DATI SU FILE (Salvataggio permanente)
 # ==============================================================================
 SAVE_FILE = "transatlantico_stato.json"
 
 def salva_stato():
-    """Salva PnL e storico trade su file JSON per persistenza tra sessioni."""
     try:
         stato = {
             "pnl_realizzato": st.session_state.pnl_realizzato,
@@ -35,7 +37,6 @@ def salva_stato():
         aggiungi_log(f"⚠️ Errore salvataggio stato: {e}")
 
 def carica_stato():
-    """Carica PnL e storico trade da file se esiste."""
     if os.path.exists(SAVE_FILE):
         try:
             with open(SAVE_FILE, "r") as f:
@@ -44,35 +45,20 @@ def carica_stato():
             pass
     return None
 
-# Inizializzazione della memoria della nave (Session State)
+# Inizializzazione della memoria della nave
 stato_caricato = carica_stato()
 
 if 'pnl_realizzato' not in st.session_state:
     st.session_state.pnl_realizzato = stato_caricato["pnl_realizzato"] if stato_caricato else 1485.50
 
 if 'posizioni_attive' not in st.session_state:
-    st.session_state.posizioni_attive = {
-        "BTC-USD": {
-            "prezzo_ingresso": 96200.0, "stop_loss": 95800.0, "max_prezzo": 96500.0,
-            "quantita": 0.05, "trailing_attivo": True, "break_even_attivo": False,
-            "orario_ingresso": datetime.now().isoformat()
-        },
-        "NVDA": {
-            "prezzo_ingresso": 135.20, "stop_loss": 134.50, "max_prezzo": 136.10,
-            "quantita": 10, "trailing_attivo": False, "break_even_attivo": False,
-            "orario_ingresso": datetime.now().isoformat()
-        }
-    }
+    st.session_state.posizioni_attive = {}
 
 if 'storico_trade' not in st.session_state:
-    st.session_state.storico_trade = stato_caricato["storico_trade"] if stato_caricato else [
-        {"data": "2026-06-08", "ticker": "TSLA", "tipo": "LONG", "profitto": 120.00, "esito": "✅ WIN"},
-        {"data": "2026-06-08", "ticker": "SOL-USD", "tipo": "LONG", "profitto": 45.50, "esito": "✅ WIN"},
-        {"data": "2026-06-09", "ticker": "AAPL", "tipo": "LONG", "profitto": -30.00, "esito": "❌ LOSS"},
-    ]
+    st.session_state.storico_trade = stato_caricato["storico_trade"] if stato_caricato else []
 
 if 'log_sistema' not in st.session_state:
-    st.session_state.log_sistema = ["[BOOT] Sistemi avviati. Motore di Refresh Nativo Attivo."]
+    st.session_state.log_sistema = ["[BOOT] Sistemi avviati. Transatlantico v63.0 (Cash 500$) online."]
 
 def aggiungi_log(messaggio):
     orario = datetime.now().strftime("%H:%M:%S")
@@ -81,11 +67,9 @@ def aggiungi_log(messaggio):
         st.session_state.log_sistema.pop()
 
 def fmt_p(val):
-    """Formattazione dinamica dei prezzi per salvaguardare i decimali del Forex."""
     return f"${val:.4f}" if val < 5 else f"${val:.2f}"
 
 def get_orario_ingresso(pos):
-    """Converte l'orario d'ingresso da stringa ISO a datetime in modo sicuro."""
     oi = pos.get("orario_ingresso", datetime.now().isoformat())
     if isinstance(oi, datetime):
         return oi
@@ -95,7 +79,7 @@ def get_orario_ingresso(pos):
         return datetime.now()
 
 # ==============================================================================
-# 🌌 MOTORI: GENERAZIONE UNIVERSO GLOBAL CROSS-ASSET (45 TARGET)
+# 🌌 MOTORI: GENERAZIONE UNIVERSO GLOBAL CROSS-ASSET
 # ==============================================================================
 @st.cache_data(ttl=1800)
 def genera_universo_volumetrico():
@@ -119,13 +103,12 @@ def genera_universo_volumetrico():
     return crypto + nasdaq + commodities + forex
 
 # ==============================================================================
-# 🛡️ RADAR TEMPORALE: DOWNLOAD DATI + CLASSIFICAZIONE ASSET
+# 🛡️ RADAR TEMPORALE: DOWNLOAD E MATEMATICA QUANTITATIVA
 # ==============================================================================
 @st.cache_data(ttl=60)
 def scarica_dati_radar(universo_tickers):
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-                      '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     }
     session = requests.Session()
     session.headers.update(headers)
@@ -139,7 +122,6 @@ def scarica_dati_radar(universo_tickers):
             if not df.empty:
                 return df
         except Exception as e:
-            aggiungi_log(f"⚠️ Download tentativo {tentativo+1}/3 fallito: {type(e).__name__}: {e}")
             time.sleep(1.5)
     return pd.DataFrame()
 
@@ -163,14 +145,23 @@ def classifica_asset(ticker):
     else:
         return "Nasdaq"
 
-def calcola_dimensione_posizione(prezzo_attuale, classe_asset, capitale_per_trade=2000):
+def calcola_dimensione_posizione(prezzo_attuale, classe_asset):
+    """Allocazione dinamica basata su un budget di 500$ reali."""
+    budget_target = {
+        "Crypto": 60.0,
+        "Nasdaq": 75.0,
+        "Metalli": 70.0,
+        "Forex": 100.0 # Valore nozionale 1 micro-lotto
+    }
+    budget = budget_target.get(classe_asset, 50.0)
+    
     if classe_asset == "Forex":
         return 1000.0  
     else:
-        return round(capitale_per_trade / prezzo_attuale, 6)
+        return round(budget / prezzo_attuale, 6)
 
 # ==============================================================================
-# 🎛️ SIDEBAR PARAMETRI (Fuori dal frammento per reset immediato al tocco)
+# 🎛️ SIDEBAR PARAMETRI DI CONTROLLO
 # ==============================================================================
 st.sidebar.header("⚓ Configurazione Limiti")
 max_posizioni = st.sidebar.number_input("Limite Massimo Posizioni", 1, 15, 10)
@@ -203,21 +194,19 @@ if st.sidebar.button("🔄 Forza Scansione Universo"):
     aggiungi_log("Universo e Radar ricalcolati da zero.")
 
 # ==============================================================================
-# 🛰️ REATTORE NATIVO: AGGIORNAMENTO AUTOMATICO OGNI 60 SECONDI (FIX CORREZIONE)
+# 🛰️ REATTORE NATIVO: AGGIORNAMENTO AUTOMATICO OGNI 60 SECONDI
 # ==============================================================================
-st.title("🚢 Transatlantico Volumetrico v62.0")
-st.subheader("Centrale Quantistica Multimercato — Propulsione di Refresh Nativa H24")
+st.title("🚢 Transatlantico Volumetrico v63.0 (Cash $500)")
+st.subheader("Centrale Quantistica Multimercato — Propulsione Nativa H24")
 st.sidebar.success("🔁 Auto-refresh Nativo: Attivo (60s)")
 
 @st.fragment(run_every=60)
 def esegui_plancia_live():
-    # 🎯 Calcolo Metriche in tempo reale dentro il frammento
     totale_trades = len(st.session_state.storico_trade)
     win_trades = sum(1 for t in st.session_state.storico_trade if "WIN" in t["esito"] or "LAMPO" in t["esito"])
     win_rate = (win_trades / totale_trades * 100) if totale_trades > 0 else 0.0
     pnl_floating = 0.0
 
-    # Caricamento dati e radar
     universo = genera_universo_volumetrico()
     storico_universo = scarica_dati_radar(tuple(universo))
 
@@ -256,10 +245,9 @@ def esegui_plancia_live():
                     "Crypto": rsi_crypto, "Forex": rsi_forex, "Metalli": rsi_commodity, "Nasdaq": rsi_nasdaq
                 }.get(classe_asset, rsi_nasdaq)
 
-                # --- CORE LOGIC LOOP ---
+                # --- GESTIONE POSIZIONI ATTIVE ---
                 if ticker in st.session_state.posizioni_attive:
                     pos = st.session_state.posizioni_attive[ticker]
-
                     orario_ingresso = get_orario_ingresso(pos)
                     minuti_trascorsi = (datetime.now() - orario_ingresso).total_seconds() / 60.0
                     rendimento_attuale_pct = ((prezzo_attuale - pos["prezzo_ingresso"]) / pos["prezzo_ingresso"]) * 100
@@ -350,7 +338,8 @@ def esegui_plancia_live():
                                 "quantita": quantita, "trailing_attivo": False, "break_even_attivo": False,
                                 "orario_ingresso": datetime.now().isoformat()  
                             }
-                            aggiungi_log(f"🚀 ACQUISTO: {ticker} ({classe_asset}) @ {fmt_p(prezzo_attuale)} | Q: {quantita}")
+                            aggiungi_log(f"🚀 ACQUISTO CASH: {ticker} ({classe_asset}) @ {fmt_p(prezzo_attuale)} | Q: {quantita}")
+                            salva_stato()
 
             except Exception:
                 continue
@@ -363,13 +352,21 @@ def esegui_plancia_live():
     # Renderizzazione blocchi metriche visive
     m_col1, m_col2, m_col3, m_col4 = st.columns(4)
     with m_col1:
+        st.markdown("<div style='background-color:#1e293b; padding:15px; border-radius:10px; border-left: 5px solid #10b981;'>", unsafe_allow_html=True)
         st.metric(label="💰 PROFITTO NETTO REALIZZATO", value=f"${st.session_state.pnl_realizzato:,.2f}")
+        st.markdown("</div>", unsafe_allow_html=True)
     with m_col2:
-        st.metric(label="🎯 SILURI IN MARE (POSIZIONI)", value=f"{len(st.session_state.posizioni_attive)} / {max_posizioni} Target")
+        st.markdown("<div style='background-color:#1e293b; padding:15px; border-radius:10px; border-left: 5px solid #3b82f6;'>", unsafe_allow_html=True)
+        st.metric(label="🎯 SILURI IN MARE (POSIZIONI)", value=f"{len(st.session_state.posizioni_attive)} / {max_posizioni}")
+        st.markdown("</div>", unsafe_allow_html=True)
     with m_col3:
+        st.markdown("<div style='background-color:#1e293b; padding:15px; border-radius:10px; border-left: 5px solid #f59e0b;'>", unsafe_allow_html=True)
         st.metric(label="📈 PRECISIONE STRATEGIA", value=f"{win_rate:.1f}%")
+        st.markdown("</div>", unsafe_allow_html=True)
     with m_col4:
+        st.markdown("<div style='background-color:#1e293b; padding:15px; border-radius:10px; border-left: 5px solid #a855f7;'>", unsafe_allow_html=True)
         st.metric(label="📊 P&L FLOATING (aperto)", value=f"${pnl_floating:,.2f}")
+        st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("---")
 
@@ -411,8 +408,10 @@ def esegui_plancia_live():
     if len(st.session_state.storico_trade) > 1:
         with st.expander("📈 Equity Curve — Curva Profitto Cumulativo", expanded=False):
             df_eq = pd.DataFrame(st.session_state.storico_trade)
-            df_eq["profitto_cumulativo"] = df_eq["profitto"].cumsum() + 1485.50
-            st.line_chart(df_eq[["profitto_cumulativo"]], width='stretch')
+            # Gestiamo il cumulo progressivo dei profitti
+            if 'profitto' in df_eq.columns:
+                df_eq["profitto_cumulativo"] = df_eq["profitto"].cumsum() + 1485.50
+                st.line_chart(df_eq[["profitto_cumulativo"]], width='stretch')
 
 # Lancio dell'esecuzione nativa della plancia
 esegui_plancia_live()
